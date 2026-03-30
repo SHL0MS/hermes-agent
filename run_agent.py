@@ -1030,7 +1030,8 @@ class AIAgent:
         try:
             from hermes_cli.config import load_config as _load_agent_config
             _agent_cfg = _load_agent_config()
-        except Exception:
+        except Exception as e:
+            logger.debug("Config load failed (using defaults): %s", e)
             _agent_cfg = {}
 
         # Persistent memory (MEMORY.md + USER.md) -- loaded from disk
@@ -1055,8 +1056,8 @@ class AIAgent:
                         user_char_limit=mem_config.get("user_char_limit", 1375),
                     )
                     self._memory_store.load_from_disk()
-            except Exception:
-                pass  # Memory is optional -- don't break agent init
+            except Exception as e:
+                logger.warning("Memory system init failed (non-fatal): %s", e)
         
         # Honcho AI-native memory (cross-session user modeling)
         # Reads $HERMES_HOME/honcho.json (instance) or ~/.honcho/config.json (global).
@@ -1133,8 +1134,8 @@ class AIAgent:
         try:
             skills_config = _agent_cfg.get("skills", {})
             self._skill_nudge_interval = int(skills_config.get("creation_nudge_interval", 10))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Skills config load failed (using defaults): %s", e)
 
         # Tool-use enforcement config: "auto" (default — matches hardcoded
         # model list), true (always), false (never), or list of substrings.
