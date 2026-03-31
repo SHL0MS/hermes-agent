@@ -37,6 +37,10 @@ _SENSITIVE_WRITE_TARGET = (
 # Dangerous command patterns
 # =========================================================================
 
+# Snapshot YOLO mode at import time so subprocesses cannot export it
+# to bypass approval in later commands within the same session.
+_YOLO_AT_STARTUP = bool(os.getenv("HERMES_YOLO_MODE"))
+
 DANGEROUS_PATTERNS = [
     (r'\brm\s+(-[^\s]*\s+)*/', "delete in root path"),
     (r'\brm\s+-[^\s]*r', "recursive delete"),
@@ -75,6 +79,15 @@ DANGEROUS_PATTERNS = [
     (r'\b(cp|mv|install)\b.*\s/etc/', "copy/move file into /etc/"),
     (r'\bsed\s+-[^\s]*i.*\s/etc/', "in-place edit of system config"),
     (r'\bsed\s+--in-place\b.*\s/etc/', "in-place edit of system config (long flag)"),
+    # Data exfiltration vectors
+    (r'\b(nc|ncat|socat)\b.*\d+\.\d+\.\d+\.\d+', "netcat to external IP"),
+    (r'/dev/tcp/', "bash /dev/tcp exfiltration"),
+    (r'/dev/udp/', "bash /dev/udp exfiltration"),
+    (r'\bopenssl\s+s_client\s+-connect\b', "openssl outbound connection"),
+    (r'\bcurl\b.*(-d|--data|--data-binary|--data-urlencode|--upload-file)\b', "curl with data upload"),
+    (r'\bwget\b.*(--post-data|--post-file)\b', "wget with data upload"),
+    # Credential file reads via common tools
+    (r'\b(cat|head|tail|less|more|bat)\b.*(\.ssh/|aws/credentials|\.env|\.netrc|\.gnupg/|\.kube/config)', "read credential file"),
 ]
 
 
@@ -434,7 +447,9 @@ def check_dangerous_command(command: str, env_type: str,
         return {"approved": True, "message": None}
 
     # --yolo: bypass all approval prompts
-    if os.getenv("HERMES_YOLO_MODE"):
+    # Read from _YOLO_AT_STARTUP to prevent subprocesses from exporting
+    # this var to bypass approval in subsequent commands.
+    if _YOLO_AT_STARTUP:
         return {"approved": True, "message": None}
 
     is_dangerous, pattern_key, description = detect_dangerous_command(command)
@@ -536,7 +551,7 @@ def check_all_command_guards(command: str, env_type: str,
 
     # --yolo or approvals.mode=off: bypass all approval prompts
     approval_mode = _get_approval_mode()
-    if os.getenv("HERMES_YOLO_MODE") or approval_mode == "off":
+    if _YOLO_AT_STARTUP or approval_mode == "off":
         return {"approved": True, "message": None}
 
     is_cli = os.getenv("HERMES_INTERACTIVE")
