@@ -1,0 +1,8 @@
+file 'media/videos/script/1080p30/Scene1_Title.mp4'
+file 'media/videos/script/1080p30/Scene2_Pipeline.mp4'
+file 'media/videos/script/1080p30/Scene3_Modes.mp4'
+file 'media/videos/script/1080p30/Scene4_Workflow.mp4'
+file 'media/videos/script/1080p30/Scene5_ManimPowered.mp4'
+file 'media/videos/script/1080p30/Scene6_References.mp4'
+file 'media/videos/script/1080p30/Scene7_UserExperience.mp4'
+file 'media/videos/script/1080p30/Scene8_Closing.mp4'

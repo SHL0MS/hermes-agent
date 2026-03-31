@@ -73,6 +73,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                args_hint="<question>"),
     CommandDef("queue", "Queue a prompt for the next turn (doesn't interrupt)", "Session",
                aliases=("q",), args_hint="<prompt>"),
+    CommandDef("editor", "Open $EDITOR to compose a long message", "Session",
+               cli_only=True, aliases=("edit",)),
     CommandDef("status", "Show session info", "Session",
                gateway_only=True),
     CommandDef("profile", "Show active profile name and home directory", "Info"),

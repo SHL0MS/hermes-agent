@@ -1,0 +1,5 @@
+# This file is used internally by FFMPEG.
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene8_Closing/uncached_00000.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene8_Closing/uncached_00001.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene8_Closing/uncached_00002.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene8_Closing/uncached_00003.mp4'

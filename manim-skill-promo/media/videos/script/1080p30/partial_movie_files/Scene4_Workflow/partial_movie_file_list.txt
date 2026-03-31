@@ -1,0 +1,10 @@
+# This file is used internally by FFMPEG.
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00000.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00001.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00002.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00003.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00004.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00005.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00006.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00007.mp4'
+file 'file:/Users/s/.hermes/hermes-agent/manim-skill-promo/media/videos/script/1080p30/partial_movie_files/Scene4_Workflow/uncached_00008.mp4'
