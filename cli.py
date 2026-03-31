@@ -1243,6 +1243,7 @@ class HermesCLI:
         self._interrupt_queue = queue.Queue()
         self._should_exit = False
         self._last_ctrl_c_time = 0
+        self._stashed_input = ""
         self._clarify_state = None
         self._clarify_freetext = False
         self._clarify_deadline = 0
@@ -6713,6 +6714,21 @@ class HermesCLI:
             """Handle Ctrl+D - exit."""
             self._should_exit = True
             event.app.exit()
+
+        @kb.add('c-s')
+        def handle_ctrl_s(event):
+            """Handle Ctrl+S - stash/unstash current input text."""
+            buf = event.app.current_buffer
+            if buf.text.strip():
+                self._stashed_input = buf.text
+                buf.text = ""
+                buf.cursor_position = 0
+                _cprint(f"{_DIM}  Input stashed. Press Ctrl+S again to restore.{_RST}")
+            elif self._stashed_input:
+                buf.text = self._stashed_input
+                buf.cursor_position = len(buf.text)
+                self._stashed_input = ""
+                _cprint(f"{_DIM}  Input restored.{_RST}")
 
         @kb.add('c-z')
         def handle_ctrl_z(event):
