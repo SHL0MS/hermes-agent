@@ -1023,6 +1023,23 @@ def terminal_tool(
                 }, ensure_ascii=False)
 
         # Prepare command for execution
+        # Intercept long `sleep` commands that block the agent and prevent
+        # user interaction.  Guide the model toward background + poll instead.
+        _sleep_match = re.match(r"^\s*sleep\s+(\d+)", command)
+        if _sleep_match and int(_sleep_match.group(1)) > 30 and not background:
+            _sleep_secs = int(_sleep_match.group(1))
+            return json.dumps({
+                "output": "",
+                "exit_code": -1,
+                "error": (
+                    f"Rejected: 'sleep {_sleep_secs}' would block the agent for "
+                    f"{_sleep_secs}s, preventing user interaction. "
+                    "Instead: run your long process with background=true, then "
+                    "use process(action='poll', session_id=...) to check progress. "
+                    "For short waits, use sleep values <= 30."
+                ),
+            }, ensure_ascii=False)
+
         if background:
             # Spawn a tracked background process via the process registry.
             # For local backends: uses subprocess.Popen with output buffering.
