@@ -1,7 +1,7 @@
 ---
 name: github-code-review
-description: Review code changes by analyzing git diffs, leaving inline comments on PRs, and performing thorough pre-push review. Works with gh CLI or falls back to git + GitHub REST API via curl.
-version: 1.1.0
+description: Review code changes by analyzing git diffs, leaving inline comments on PRs, and performing thorough pre-push review. Includes checklist for default-value changes. Works with gh CLI or falls back to git + GitHub REST API via curl.
+version: 1.2.0
 author: Hermes Agent
 license: MIT
 metadata:
@@ -311,6 +311,13 @@ When performing a code review (local or PR), systematically check:
 - Public APIs documented
 - Non-obvious logic has comments explaining "why"
 - README updated if behavior changed
+
+### Default Value Changes
+When a PR changes a default value or existing behavior:
+- **Check git blame** for the original commit that set the value. Read its commit message and PR description for the rationale.
+- **Ask: "Why was the original value chosen?"** A default of `0.0.0.0` might mean "intentionally externally reachable." A default of `False` might mean "causes problems in tmux." A default of `fail_open=True` might mean "the tool is rarely installed."
+- **Verify the PR accounts for the original intent.** If the old default served a purpose, the PR should either preserve that use case (via config toggle) or explain why the purpose no longer applies.
+- **Check for downstream breakage.** Changing a default is a behavior change for every existing user who didn't explicitly configure the value.
 
 ---
 

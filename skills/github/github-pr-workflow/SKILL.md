@@ -1,7 +1,7 @@
 ---
 name: github-pr-workflow
-description: Full pull request lifecycle — create branches, commit changes, open PRs, monitor CI status, auto-fix failures, and merge. Works with gh CLI or falls back to git + GitHub REST API via curl.
-version: 1.1.0
+description: Full pull request lifecycle — create branches, commit changes, issue-vs-PR decision framework, check for competing PRs, content hygiene, open PRs, monitor CI status, rebase guidance, auto-fix failures, and merge. Works with gh CLI or falls back to git + GitHub REST API via curl.
+version: 1.4.0
 author: Hermes Agent
 license: MIT
 metadata:
@@ -67,6 +67,8 @@ git checkout main && git pull origin main
 git checkout -b feat/add-user-authentication
 ```
 
+> **Warning:** Always branch from `origin/main` (or the repo's default branch), never from a release tag like `v1.2.3`. Tags fall behind `main` as new commits land — branches based on tags will diverge, causing test failures and merge conflicts in your PR. If you need to target a specific release, branch from `origin/main` and cherry-pick.
+
 Branch naming conventions:
 - `feat/description` — new features
 - `fix/description` — bug fixes
@@ -100,7 +102,79 @@ Longer explanation if needed. Wrap at 72 characters.
 
 Types: `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`, `perf`
 
-## 3. Pushing and Creating a PR
+## 3. Issue or PR? Decision Framework
+
+When you've verified a bug, decide whether to file an issue or go straight to a PR. Filing an issue with a ready-made fix risks someone else PRing it before you.
+
+**Three checks — all must pass for a PR:**
+
+1. **Is there exactly one correct fix?**
+   - Yes → PR. (`not value` → `value is None` has one answer.)
+   - Multiple valid approaches → Issue. (Gateway resume loop could be session flag, clean start, stale update discard.)
+
+2. **Does the fix change behavior for users who didn't hit the bug?**
+   - No → PR. (Only affects users who trigger the specific condition.)
+   - Yes → Issue. (Changing a default affects ALL users — needs maintainer input.)
+
+3. **Is the fix under 20 lines?**
+   - Yes (and #1 and #2 pass) → PR immediately. Don't deliberate.
+   - No → Issue with the analysis. Large changes need review before implementation.
+
+**If uncertain on #1 or #2, default to PR** — it's easier for a maintainer to close a PR with feedback than to race against someone else implementing your issue. A rejected PR with a good explanation teaches more than a scooped issue.
+
+## 4. Pre-Flight: Check for Competing PRs
+
+**Before creating a PR**, check if someone else has already opened one that addresses the same issue or modifies the same files. This avoids duplicate work.
+
+**With gh:**
+
+```bash
+# Check for PRs that reference the same issue
+gh pr list --search "is:open #42" --json number,title,author --jq '.[] | "#\(.number) by @\(.author.login): \(.title)"'
+
+# Check for PRs that touch the same files you modified
+CHANGED_FILES=$(git diff --name-only origin/main...HEAD | head -5 | tr '\n' ' ')
+for f in $CHANGED_FILES; do
+  gh pr list --search "is:open $f" --json number,title --jq '.[] | "#\(.number): \(.title)"'
+done | sort -u
+```
+
+**With curl:**
+
+```bash
+# Search PRs mentioning the issue number
+curl -s -H "Authorization: token $GITHUB_TOKEN" \
+  "https://api.github.com/search/issues?q=repo:$OWNER/$REPO+is:pr+is:open+%2342" \
+  | python3 -c "import json,sys; [print(f'#{i[\"number\"]} by @{i[\"user\"][\"login\"]}: {i[\"title\"]}') for i in json.load(sys.stdin).get('items',[])]"
+```
+
+If competing PRs exist:
+- **Same fix, earlier PR**: Close yours and defer to the earlier one
+- **Different approach, same problem**: Note the competing PR in your description and explain why your approach differs
+- **Overlapping files, different goals**: Coordinate to avoid merge conflicts
+
+## 5. Pre-Push Content Hygiene
+
+Before pushing, check for content that shouldn't be in the PR:
+
+```bash
+# Check for wrong git identity
+git config user.name && git config user.email
+gh api user --jq .login
+
+# Check for references to products/tools that shouldn't be attributed
+git diff origin/main -- '*.md' '*.py' | grep -i "claude code\|openclaw\|competitor" || echo "Clean"
+
+# Check for leaked credentials, API keys, tokens
+git diff origin/main | grep -iE "api.key|secret|token|password|Bearer" || echo "Clean"
+
+# Check for wrong account references (if multi-account)
+git diff origin/main | grep -i "wrong-account-name" || echo "Clean"
+```
+
+If the PR references external products for "inspiration," consider generic phrasing ("other agent CLIs") instead of specific product names — edit history is permanent and searchable.
+
+## 6. Pushing and Creating a PR
 
 ### Push the Branch (same either way)
 
@@ -148,7 +222,7 @@ The response JSON includes the PR `number` — save it for later commands.
 
 To create as a draft, add `"draft": true` to the JSON body.
 
-## 4. Monitoring CI Status
+## 7. Monitoring CI Status
 
 ### Check CI Status
 
@@ -208,7 +282,31 @@ for i in $(seq 1 20); do
 done
 ```
 
-## 5. Auto-Fixing CI Failures
+### When to Rebase
+
+**Rebase when:**
+- CI fails due to upstream changes (new tests, refactored code your branch doesn't have)
+- The maintainer requests a rebase
+- Merge conflicts block the PR
+
+**Don't rebase when:**
+- The maintainer cherry-picks changes (they rebase for you by applying your diff to current main)
+- CI failures are pre-existing on main (check `gh run list --branch main` — if main fails the same tests, it's not your problem)
+- The PR is already under review (rebasing rewrites the comment thread)
+
+**After rebasing, always re-check CI:**
+
+```bash
+git fetch origin main
+git rebase origin/main
+git push --force-with-lease
+# Wait for CI, then:
+gh pr checks <pr_number>
+```
+
+New test failures after rebase usually mean upstream added tests that depend on new code your branch now has. These should pass — if they don't, the rebase picked up a conflict.
+
+## 8. Auto-Fixing CI Failures
 
 When CI fails, diagnose and fix. This loop works with either auth method.
 
@@ -273,7 +371,7 @@ When asked to auto-fix CI, follow this loop:
 5. Wait for CI → re-check status
 6. Repeat if still failing (up to 3 attempts, then ask the user)
 
-## 6. Merging
+## 9. Merging
 
 **With gh:**
 
@@ -326,7 +424,7 @@ curl -s -X POST \
   -d "{\"query\": \"mutation { enablePullRequestAutoMerge(input: {pullRequestId: \\\"$PR_NODE_ID\\\", mergeMethod: SQUASH}) { clientMutationId } }\"}"
 ```
 
-## 7. Complete Workflow Example
+## 10. Complete Workflow Example
 
 ```bash
 # 1. Start from clean main

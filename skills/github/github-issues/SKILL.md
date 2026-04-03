@@ -1,7 +1,7 @@
 ---
 name: github-issues
-description: Create, manage, triage, and close GitHub issues. Search existing issues, add labels, assign people, and link to PRs. Works with gh CLI or falls back to git + GitHub REST API via curl.
-version: 1.1.0
+description: Create, manage, triage, verify, and close GitHub issues. Search existing issues, verify claims against the codebase, add labels, assign people, and link to PRs. Works with gh CLI or falls back to git + GitHub REST API via curl.
+version: 1.2.0
 author: Hermes Agent
 license: MIT
 metadata:
@@ -326,7 +326,69 @@ for i in json.load(sys.stdin):
 
 5. **Comment with triage notes** if needed
 
-## 5. Bulk Operations
+## 5. Issue Verification Workflow
+
+Before filing a new issue or picking up an existing one, verify that the described problem still exists on the current codebase. Stale issues waste maintainer time.
+
+### Verifying an existing issue
+
+1. **Read the issue body and extract claims:**
+
+```bash
+# Get the issue body
+gh issue view 123 --json body --jq '.body'
+```
+
+2. **Extract file:line references from the issue body.** Look for patterns like `file.py:123`, `` `function_name` at line N ``, or code blocks that reference specific locations.
+
+3. **Verify each claim against the current code:**
+
+```bash
+# Check if the cited line still contains what the issue claims
+sed -n '123p' path/to/file.py
+
+# Search for the pattern if line numbers may have shifted
+grep -n "the_claimed_pattern" path/to/file.py
+```
+
+4. **Check if the issue was already fixed:**
+
+```bash
+# Search for PRs that reference this issue
+gh pr list --search "is:merged #123" --json number,title --jq '.[] | "#\(.number): \(.title)"'
+
+# Search commit messages
+git log --oneline --grep="#123" | head -5
+```
+
+5. **Report findings.** For each claim:
+   - **STILL VALID**: cite the current file:line that confirms it
+   - **FIXED**: cite the PR or commit that resolved it
+   - **STALE LINE NUMBERS**: the pattern exists but at different lines — provide corrected references
+   - **CANNOT REPRODUCE**: the described code no longer exists
+
+### Before filing a new issue
+
+1. **Search for duplicates:**
+
+```bash
+# Search open issues for similar keywords
+gh issue list --search "is:open timeout subprocess" --json number,title --jq '.[] | "#\(.number): \(.title)"'
+
+# Include closed issues (may have been fixed or rejected)
+gh issue list --search "timeout subprocess" --state all --json number,title,state --jq '.[] | "#\(.number) [\(.state)]: \(.title)"' | head -10
+```
+
+2. **Verify the bug exists on the current default branch:**
+
+```bash
+git fetch origin main && git checkout origin/main
+# Then reproduce the issue against this code, not a stale branch
+```
+
+3. **Include verified file:line references.** Don't cite line numbers from memory — verify them against the current code before including them in the issue body.
+
+## 6. Bulk Operations
 
 For batch operations, combine API calls with shell scripting:
 
