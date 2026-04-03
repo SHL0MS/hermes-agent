@@ -3674,6 +3674,66 @@ class HermesCLI:
         )
         _cprint(f"  Original session: {parent_session_id}")
         _cprint(f"  Branch session:   {new_session_id}")
+    def _handle_diff_command(self, cmd: str):
+        """Show git diff of changes in the current working directory."""
+        import subprocess as _sp
+
+        cwd = os.getenv("TERMINAL_CWD", os.getcwd())
+        parts = cmd.split()[1:]
+        stat_only = "--stat" in parts
+
+        # Check if we're in a git repo
+        try:
+            _sp.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=cwd, capture_output=True, check=True, timeout=5,
+            )
+        except Exception:
+            _cprint(f"  {_DIM}Not a git repository.{_RST}")
+            return
+
+        try:
+            # Show stat summary
+            stat_result = _sp.run(
+                ["git", "diff", "--stat"],
+                cwd=cwd, capture_output=True, text=True, timeout=10,
+            )
+            staged_result = _sp.run(
+                ["git", "diff", "--cached", "--stat"],
+                cwd=cwd, capture_output=True, text=True, timeout=10,
+            )
+
+            stat_out = stat_result.stdout.strip()
+            staged_out = staged_result.stdout.strip()
+
+            if not stat_out and not staged_out:
+                _cprint(f"  {_DIM}No changes.{_RST}")
+                return
+
+            if staged_out:
+                _cprint(f"\n  {_BOLD}Staged:{_RST}")
+                self.console.print(_rich_text_from_ansi(staged_out))
+            if stat_out:
+                _cprint(f"\n  {_BOLD}Unstaged:{_RST}")
+                self.console.print(_rich_text_from_ansi(stat_out))
+
+            if stat_only:
+                return
+
+            # Show full diff
+            diff_result = _sp.run(
+                ["git", "diff", "--cached"] if staged_out and not stat_out else ["git", "diff"],
+                cwd=cwd, capture_output=True, text=True, timeout=30,
+            )
+            diff_out = diff_result.stdout.strip()
+            if diff_out:
+                _cprint("")
+                self.console.print(_rich_text_from_ansi(diff_out))
+
+        except _sp.TimeoutExpired:
+            _cprint(f"  {_DIM}Git diff timed out.{_RST}")
+        except Exception as e:
+            _cprint(f"  {_DIM}Git diff error: {e}{_RST}")
 
     def save_conversation(self):
         """Save the current conversation to a file."""
@@ -4586,6 +4646,8 @@ class HermesCLI:
             self._status_bar_visible = not self._status_bar_visible
             state = "visible" if self._status_bar_visible else "hidden"
             self.console.print(f"  Status bar {state}")
+        elif canonical == "diff":
+            self._handle_diff_command(cmd_original)
         elif canonical == "verbose":
             self._toggle_verbose()
         elif canonical == "yolo":
