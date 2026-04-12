@@ -1,37 +1,92 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* Hermes Agent — Design tokens                                        */
+/* Ported from hermes-agent.nousresearch.com landing page              */
+/* ------------------------------------------------------------------ */
+
+/* --- Font faces --- */
+@font-face { font-family: "Collapse"; src: url("/fonts/Collapse-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Collapse"; src: url("/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "RulesCompressed"; src: url("/fonts/RulesCompressed-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "RulesCompressed"; src: url("/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "RulesExpanded"; src: url("/fonts/RulesExpanded-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "RulesExpanded"; src: url("/fonts/RulesExpanded-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Mondwest"; src: url("/fonts/Mondwest-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
 @theme {
-  --color-background: oklch(0.145 0.01 250);
-  --color-foreground: oklch(0.95 0.01 250);
-  --color-card: oklch(0.17 0.01 250);
-  --color-card-foreground: oklch(0.95 0.01 250);
-  --color-primary: oklch(0.7 0.15 250);
-  --color-primary-foreground: oklch(0.98 0.005 250);
-  --color-secondary: oklch(0.22 0.01 250);
-  --color-secondary-foreground: oklch(0.9 0.01 250);
-  --color-muted: oklch(0.2 0.01 250);
-  --color-muted-foreground: oklch(0.6 0.01 250);
-  --color-accent: oklch(0.25 0.01 250);
-  --color-accent-foreground: oklch(0.95 0.01 250);
-  --color-destructive: oklch(0.6 0.2 25);
-  --color-destructive-foreground: oklch(0.98 0.005 250);
-  --color-success: oklch(0.7 0.18 155);
-  --color-warning: oklch(0.75 0.15 75);
-  --color-border: oklch(0.25 0.01 250);
-  --color-input: oklch(0.25 0.01 250);
-  --color-ring: oklch(0.7 0.15 250);
-  --color-popover: oklch(0.17 0.01 250);
-  --color-popover-foreground: oklch(0.95 0.01 250);
+  /* ---- Hermes palette ---- */
+  --color-background: #170d02;
+  --color-foreground: #ffe6cb;
+  --color-card: #1e1308;
+  --color-card-foreground: #ffe6cb;
+  --color-primary: #ffac02;
+  --color-primary-foreground: #170d02;
+  --color-secondary: #2a1a0a;
+  --color-secondary-foreground: #ffe6cb;
+  --color-muted: #231508;
+  --color-muted-foreground: #b89060;
+  --color-accent: #332010;
+  --color-accent-foreground: #ffe6cb;
+  --color-destructive: #fb2c36;
+  --color-destructive-foreground: #fff;
+  --color-success: #4ade80;
+  --color-warning: #ffac02;
+  --color-border: color-mix(in srgb, #ffac02 20%, transparent);
+  --color-input: color-mix(in srgb, #ffac02 20%, transparent);
+  --color-ring: #ffac02;
+  --color-popover: #1e1308;
+  --color-popover-foreground: #ffe6cb;
+
+  /* ---- Font stacks ---- */
+  --font-sans: "Collapse", Arial, sans-serif;
+  --font-mono: "Courier Prime", "Courier New", monospace;
+  --font-display: "Mondwest", Arial, sans-serif;
+  --font-expanded: "RulesExpanded", Arial, sans-serif;
+  --font-compressed: "RulesCompressed", Arial, sans-serif;
 }
 
+/* ---- Global body ---- */
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: "Mondwest", Arial, sans-serif;
   background: var(--color-background);
   color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
+/* ---- Selection ---- */
+::selection {
+  background: var(--color-primary);
+  color: var(--color-background);
+}
+
+/* ---- Scrollbars (thin amber) ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: color-mix(in srgb, var(--color-primary) 20%, transparent) transparent;
+}
+html, body {
+  scrollbar-color: color-mix(in srgb, var(--color-primary) 40%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-primary) 50%, transparent);
+}
+
+/* ---- Hide scrollbar utility ---- */
 .scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -40,14 +95,30 @@ body {
   display: none;
 }
 
+/* ---- Code blocks ---- */
 code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: "Courier Prime", "Courier New", monospace;
   font-size: 0.85em;
   padding: 0.15em 0.4em;
-  border-radius: 0.25rem;
-  background: var(--color-secondary);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
+/* ---- Dither texture ---- */
+.dither {
+  background: repeating-conic-gradient(currentColor 0% 25%, #0000 0% 50%) 0 0 / 2px 2px;
+}
+
+/* ---- Blink cursor ---- */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* ---- Page transitions ---- */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -81,6 +152,19 @@ code {
   }
 }
 
+/* ---- Plus-lighter blend for headings ---- */
+.blend-lighter {
+  mix-blend-mode: plus-lighter;
+}
+
+/* ---- Font utilities ---- */
+.font-display { font-family: "Mondwest", Arial, sans-serif; }
+.font-expanded { font-family: "RulesExpanded", Arial, sans-serif; }
+.font-compressed { font-family: "RulesCompressed", Arial, sans-serif; }
+.font-courier { font-family: "Courier Prime", "Courier New", monospace; }
+.font-collapse { font-family: "Collapse", Arial, sans-serif; }
+
+/* ---- Reduced motion ---- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
