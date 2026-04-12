@@ -271,14 +271,14 @@ export default function ConfigPage() {
           </code>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="ghost" size="sm" onClick={handleExport} title="Export config as JSON">
+          <Button variant="ghost" size="sm" onClick={handleExport} title="Export config as JSON" aria-label="Export config">
             <Download className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} title="Import config from JSON">
+          <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} title="Import config from JSON" aria-label="Import config">
             <Upload className="h-3.5 w-3.5" />
           </Button>
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          <Button variant="ghost" size="sm" onClick={handleReset} title="Reset to defaults">
+          <Button variant="ghost" size="sm" onClick={handleReset} title="Reset to defaults" aria-label="Reset to defaults">
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
 
@@ -346,7 +346,7 @@ export default function ConfigPage() {
         <div className="flex gap-4" style={{ minHeight: "calc(100vh - 180px)" }}>
           {/* ---- Sidebar ---- */}
           <div className="w-52 shrink-0">
-            <div className="sticky top-4 flex flex-col gap-1">
+            <div className="sticky top-[72px] flex flex-col gap-1">
               {/* Search */}
               <div className="relative mb-2">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

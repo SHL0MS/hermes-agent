@@ -12,26 +12,9 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PlatformStatus, SessionInfo, StatusResponse } from "@/lib/api";
+import { timeAgo, isoTimeAgo } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-function timeAgo(ts: number): string {
-  const delta = Date.now() / 1000 - ts;
-  if (delta < 60) return "just now";
-  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
-  if (delta < 172800) return "yesterday";
-  return `${Math.floor(delta / 86400)}d ago`;
-}
-
-function isoTimeAgo(iso: string): string {
-  const delta = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (delta < 0 || Number.isNaN(delta)) return "unknown";
-  if (delta < 60) return "just now";
-  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
-  return `${Math.floor(delta / 86400)}d ago`;
-}
 
 const PLATFORM_STATE_BADGE: Record<string, { variant: "success" | "warning" | "destructive"; label: string }> = {
   connected: { variant: "success", label: "Connected" },
@@ -120,8 +103,46 @@ export default function StatusPage() {
   const activeSessions = sessions.filter((s) => s.is_active);
   const recentSessions = sessions.filter((s) => !s.is_active).slice(0, 5);
 
+  // Collect alerts that need attention
+  const alerts: { message: string; detail?: string }[] = [];
+  if (status.gateway_state === "startup_failed") {
+    alerts.push({
+      message: "Gateway failed to start",
+      detail: status.gateway_exit_reason ?? undefined,
+    });
+  }
+  const failedPlatforms = platforms.filter(([, info]) => info.state === "fatal" || info.state === "disconnected");
+  for (const [name, info] of failedPlatforms) {
+    alerts.push({
+      message: `${name.charAt(0).toUpperCase() + name.slice(1)} ${info.state === "fatal" ? "error" : "disconnected"}`,
+      detail: info.error_message ?? undefined,
+    });
+  }
+  if (configNeedsMigration) {
+    alerts.push({ message: `Config v${status.config_version} is outdated — v${status.latest_config_version} available` });
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      {/* Alert banner — breaks grid monotony for critical states */}
+      {alerts.length > 0 && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/[0.06] p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-2 min-w-0">
+              {alerts.map((alert, i) => (
+                <div key={i}>
+                  <p className="text-sm font-medium text-destructive">{alert.message}</p>
+                  {alert.detail && (
+                    <p className="text-xs text-destructive/70 mt-0.5">{alert.detail}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {items.map(({ icon: Icon, label, value, badgeText, badgeVariant }) => (
           <Card key={label}>
@@ -139,10 +160,6 @@ export default function StatusPage() {
                 )}
                 {badgeText}
               </Badge>
-
-              {label === "Gateway" && !status.gateway_running && status.gateway_exit_reason && (
-                <p className="mt-2 text-xs text-destructive">{status.gateway_exit_reason}</p>
-              )}
             </CardContent>
           </Card>
         ))}
@@ -178,7 +195,7 @@ export default function StatusPage() {
                   </div>
 
                   <span className="text-xs text-muted-foreground">
-                    {s.model} · {s.message_count} msgs · {timeAgo(s.last_active)}
+                    {s.model ?? "unknown"} · {s.message_count} msgs · {timeAgo(s.last_active)}
                   </span>
                 </div>
               </div>
@@ -206,7 +223,7 @@ export default function StatusPage() {
                   <span className="font-medium text-sm">{s.title ?? "Untitled"}</span>
 
                   <span className="text-xs text-muted-foreground">
-                    {s.model} · {s.message_count} msgs · {timeAgo(s.last_active)}
+                    {s.model ?? "unknown"} · {s.message_count} msgs · {timeAgo(s.last_active)}
                   </span>
 
                   {s.preview && (
@@ -218,7 +235,7 @@ export default function StatusPage() {
 
                 <Badge variant="outline" className="text-[10px]">
                   <Database className="mr-1 h-3 w-3" />
-                  {s.source}
+                  {s.source ?? "local"}
                 </Badge>
               </div>
             ))}

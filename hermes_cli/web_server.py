@@ -677,7 +677,7 @@ async def get_skills():
     from hermes_cli.skills_config import get_disabled_skills
     config = load_config()
     disabled = get_disabled_skills(config)
-    skills = _find_all_skills(skip_disabled=False)
+    skills = _find_all_skills(skip_disabled=True)
     for s in skills:
         s["enabled"] = s["name"] not in disabled
     return skills

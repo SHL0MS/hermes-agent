@@ -5,8 +5,6 @@ import {
   Wrench,
   ChevronDown,
   ChevronRight,
-  ToggleLeft,
-  Layers,
   Filter,
   X,
 } from "lucide-react";
@@ -56,9 +54,7 @@ function prettyCategory(raw: string | null | undefined): string {
     .join(" ");
 }
 
-function formatNumber(n: number): string {
-  return n.toLocaleString();
-}
+
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -71,8 +67,8 @@ export default function SkillsPage() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [togglingSkills, setTogglingSkills] = useState<Set<string>>(new Set());
-  // Start with all categories collapsed so the page is compact
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string> | "all">("all");
+  // Start expanded so toggles are immediately accessible
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string> | "all">(new Set());
   const { toast, showToast } = useToast();
 
   useEffect(() => {
@@ -208,38 +204,15 @@ export default function SkillsPage() {
     <div className="flex flex-col gap-6">
       <Toast toast={toast} />
 
-      {/* ═══════════════ Summary Cards ═══════════════ */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <CardContent className="py-4">
-            <div className="text-xs text-muted-foreground mb-1">Total Skills</div>
-            <div className="text-2xl font-bold">{formatNumber(skills.length)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <ToggleLeft className="h-3 w-3" /> Enabled
-            </div>
-            <div className="text-2xl font-bold text-green-400">{formatNumber(enabledCount)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <Layers className="h-3 w-3" /> Categories
-            </div>
-            <div className="text-2xl font-bold">{allCategories.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <Wrench className="h-3 w-3" /> Toolsets
-            </div>
-            <div className="text-2xl font-bold">{toolsets.length}</div>
-          </CardContent>
-        </Card>
+      {/* ═══════════════ Header + Search ═══════════════ */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Package className="h-5 w-5 text-muted-foreground" />
+          <h1 className="text-base font-semibold">Skills</h1>
+          <span className="text-xs text-muted-foreground">
+            {enabledCount}/{skills.length} enabled
+          </span>
+        </div>
       </div>
 
       {/* ═══════════════ Search + Category Filter ═══════════════ */}
@@ -300,16 +273,7 @@ export default function SkillsPage() {
       )}
 
       {/* ═══════════════ Skills by Category ═══════════════ */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Package className="h-4 w-4" />
-          Skills
-          {filteredSkills.length !== skills.length && (
-            <span className="text-xs">
-              ({filteredSkills.length} of {skills.length})
-            </span>
-          )}
-        </h2>
+      <section className="flex flex-col gap-3">
 
         {filteredSkills.length === 0 ? (
           <Card>
@@ -349,7 +313,15 @@ export default function SkillsPage() {
                   </div>
                 </CardHeader>
 
-                {!collapsed && (
+                {collapsed ? (
+                  /* Peek: show first few skill names so collapsed isn't blank */
+                  <CardContent className="pt-0 px-4 pb-3">
+                    <p className="text-xs text-muted-foreground/60 truncate">
+                      {catSkills.slice(0, 4).map((s) => s.name).join(", ")}
+                      {catSkills.length > 4 && `, +${catSkills.length - 4} more`}
+                    </p>
+                  </CardContent>
+                ) : (
                   <CardContent className="pt-0 px-4 pb-3">
                     <div className="grid gap-1">
                       {catSkills.map((skill) => (
@@ -357,7 +329,6 @@ export default function SkillsPage() {
                           key={skill.name}
                           className="group flex items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-muted/40"
                         >
-                          {/* Enable/disable switch */}
                           <div className="pt-0.5 shrink-0">
                             <Switch
                               checked={skill.enabled}
@@ -366,7 +337,6 @@ export default function SkillsPage() {
                             />
                           </div>
 
-                          {/* Skill info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5">
                               <span

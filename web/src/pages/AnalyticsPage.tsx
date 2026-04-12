@@ -3,6 +3,7 @@ import {
   BarChart3,
   Coins,
   Cpu,
+  Database,
   Hash,
   TrendingUp,
 } from "lucide-react";
@@ -17,6 +18,8 @@ const PERIODS = [
   { label: "90d", days: 90 },
 ] as const;
 
+const CHART_HEIGHT_PX = 160;
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -26,6 +29,12 @@ function formatTokens(n: number): string {
 function formatCost(n: number): string {
   if (n < 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
+}
+
+/** Pick the best cost value: actual > estimated > 0 */
+function bestCost(entry: { estimated_cost: number; actual_cost?: number }): number {
+  if (entry.actual_cost && entry.actual_cost > 0) return entry.actual_cost;
+  return entry.estimated_cost;
 }
 
 function formatDate(day: string): string {
@@ -86,38 +95,46 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex items-end gap-1 h-40">
+        <div className="flex items-end gap-[2px]" style={{ height: CHART_HEIGHT_PX }}>
           {daily.map((d) => {
-            const inputPct = (d.input_tokens / maxTokens) * 100;
-            const outputPct = (d.output_tokens / maxTokens) * 100;
-            const totalTokens = d.input_tokens + d.output_tokens;
+            const total = d.input_tokens + d.output_tokens;
+            const inputH = Math.round((d.input_tokens / maxTokens) * CHART_HEIGHT_PX);
+            const outputH = Math.round((d.output_tokens / maxTokens) * CHART_HEIGHT_PX);
+            const cacheReadPct = d.cache_read_tokens > 0
+              ? Math.round((d.cache_read_tokens / (d.input_tokens + d.cache_read_tokens)) * 100)
+              : 0;
             return (
               <div
                 key={d.day}
-                className="flex-1 flex flex-col items-stretch justify-end gap-0 min-w-0 group relative"
+                className="flex-1 min-w-0 group relative flex flex-col justify-end"
+                style={{ height: CHART_HEIGHT_PX }}
               >
                 {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
-                  <div className="rounded-md bg-popover border border-border px-2 py-1 text-[10px] text-foreground shadow-md whitespace-nowrap">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 pointer-events-none">
+                  <div className="rounded-md bg-card border border-border px-2.5 py-1.5 text-[10px] text-foreground shadow-lg whitespace-nowrap">
                     <div className="font-medium">{formatDate(d.day)}</div>
-                    <div>In: {formatTokens(d.input_tokens)}</div>
-                    <div>Out: {formatTokens(d.output_tokens)}</div>
-                    <div>Total: {formatTokens(totalTokens)}</div>
+                    <div>Input: {formatTokens(d.input_tokens)}</div>
+                    <div>Output: {formatTokens(d.output_tokens)}</div>
+                    {cacheReadPct > 0 && <div>Cache hit: {cacheReadPct}%</div>}
+                    <div>Total: {formatTokens(total)}</div>
+                    {bestCost(d) > 0 && <div>Cost: {formatCost(bestCost(d))}</div>}
                   </div>
                 </div>
+                {/* Input bar */}
                 <div
-                  className="bg-blue-500/80 rounded-t-sm min-h-0 transition-all"
-                  style={{ height: `${inputPct}%` }}
+                  className="w-full bg-blue-500/80 rounded-t-sm"
+                  style={{ height: Math.max(inputH, total > 0 ? 1 : 0) }}
                 />
+                {/* Output bar */}
                 <div
-                  className="bg-green-500/80 rounded-b-sm min-h-0 transition-all"
-                  style={{ height: `${outputPct}%` }}
+                  className="w-full bg-green-500/80 rounded-b-sm"
+                  style={{ height: Math.max(outputH, d.output_tokens > 0 ? 1 : 0) }}
                 />
               </div>
             );
           })}
         </div>
-        {/* X-axis labels — show first, middle, last */}
+        {/* X-axis labels */}
         <div className="flex justify-between mt-2 text-[10px] text-muted-foreground">
           <span>{daily.length > 0 ? formatDate(daily[0].day) : ""}</span>
           {daily.length > 2 && (
@@ -133,7 +150,6 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
 function DailyTable({ daily }: { daily: AnalyticsDailyEntry[] }) {
   if (daily.length === 0) return null;
 
-  // Show most recent first
   const sorted = [...daily].reverse();
 
   return (
@@ -151,27 +167,37 @@ function DailyTable({ daily }: { daily: AnalyticsDailyEntry[] }) {
               <tr className="border-b border-border text-muted-foreground text-xs">
                 <th className="text-left py-2 pr-4 font-medium">Date</th>
                 <th className="text-right py-2 px-4 font-medium">Sessions</th>
-                <th className="text-right py-2 px-4 font-medium">Input Tokens</th>
-                <th className="text-right py-2 px-4 font-medium">Output Tokens</th>
+                <th className="text-right py-2 px-4 font-medium">Input</th>
+                <th className="text-right py-2 px-4 font-medium">Output</th>
+                <th className="text-right py-2 px-4 font-medium">Cache Hit</th>
                 <th className="text-right py-2 pl-4 font-medium">Cost</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((d) => (
-                <tr key={d.day} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
-                  <td className="py-2 pr-4 font-medium">{formatDate(d.day)}</td>
-                  <td className="text-right py-2 px-4 text-muted-foreground">{d.sessions}</td>
-                  <td className="text-right py-2 px-4">
-                    <span className="text-blue-400">{formatTokens(d.input_tokens)}</span>
-                  </td>
-                  <td className="text-right py-2 px-4">
-                    <span className="text-green-400">{formatTokens(d.output_tokens)}</span>
-                  </td>
-                  <td className="text-right py-2 pl-4 text-muted-foreground">
-                    {d.estimated_cost != null ? formatCost(d.estimated_cost) : "—"}
-                  </td>
-                </tr>
-              ))}
+              {sorted.map((d) => {
+                const cost = bestCost(d);
+                const cacheHitPct = d.cache_read_tokens > 0 && d.input_tokens > 0
+                  ? Math.round((d.cache_read_tokens / d.input_tokens) * 100)
+                  : 0;
+                return (
+                  <tr key={d.day} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                    <td className="py-2 pr-4 font-medium">{formatDate(d.day)}</td>
+                    <td className="text-right py-2 px-4 text-muted-foreground">{d.sessions}</td>
+                    <td className="text-right py-2 px-4">
+                      <span className="text-blue-400">{formatTokens(d.input_tokens)}</span>
+                    </td>
+                    <td className="text-right py-2 px-4">
+                      <span className="text-green-400">{formatTokens(d.output_tokens)}</span>
+                    </td>
+                    <td className="text-right py-2 px-4 text-muted-foreground">
+                      {cacheHitPct > 0 ? `${cacheHitPct}%` : "—"}
+                    </td>
+                    <td className="text-right py-2 pl-4 text-muted-foreground">
+                      {cost > 0 ? formatCost(cost) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -183,7 +209,6 @@ function DailyTable({ daily }: { daily: AnalyticsDailyEntry[] }) {
 function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
   if (models.length === 0) return null;
 
-  // Sort by total tokens desc
   const sorted = [...models].sort(
     (a, b) => b.input_tokens + b.output_tokens - (a.input_tokens + a.output_tokens),
   );
@@ -220,7 +245,7 @@ function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
                     <span className="text-green-400">{formatTokens(m.output_tokens)}</span>
                   </td>
                   <td className="text-right py-2 pl-4 text-muted-foreground">
-                    {m.estimated_cost != null ? formatCost(m.estimated_cost) : "—"}
+                    {m.estimated_cost > 0 ? formatCost(m.estimated_cost) : "—"}
                   </td>
                 </tr>
               ))}
@@ -286,8 +311,8 @@ export default function AnalyticsPage() {
 
       {data && (
         <>
-          {/* Summary cards */}
-          <div className="grid gap-4 sm:grid-cols-3">
+          {/* Summary cards — matches hermes's token model */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard
               icon={Hash}
               label="Total Tokens"
@@ -295,10 +320,22 @@ export default function AnalyticsPage() {
               sub={`${formatTokens(data.totals.total_input)} in / ${formatTokens(data.totals.total_output)} out`}
             />
             <SummaryCard
+              icon={Database}
+              label="Cache Hit"
+              value={data.totals.total_cache_read > 0
+                ? `${Math.round((data.totals.total_cache_read / (data.totals.total_input + data.totals.total_cache_read)) * 100)}%`
+                : "—"}
+              sub={`${formatTokens(data.totals.total_cache_read)} tokens from cache`}
+            />
+            <SummaryCard
               icon={Coins}
               label="Total Cost"
-              value={formatCost(data.totals.total_estimated_cost)}
-              sub={`Last ${days} days`}
+              value={formatCost(
+                data.totals.total_actual_cost > 0
+                  ? data.totals.total_actual_cost
+                  : data.totals.total_estimated_cost
+              )}
+              sub={data.totals.total_actual_cost > 0 ? "actual" : `estimated · last ${days}d`}
             />
             <SummaryCard
               icon={BarChart3}
@@ -321,8 +358,9 @@ export default function AnalyticsPage() {
         <Card>
           <CardContent className="py-12">
             <div className="flex flex-col items-center text-muted-foreground">
-              <BarChart3 className="h-8 w-8 mb-2 opacity-50" />
-              <p className="text-sm">No usage data for this period</p>
+              <BarChart3 className="h-8 w-8 mb-3 opacity-40" />
+              <p className="text-sm font-medium">No usage data for this period</p>
+              <p className="text-xs mt-1 text-muted-foreground/60">Start a session to see analytics here</p>
             </div>
           </CardContent>
         </Card>

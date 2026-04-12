@@ -56,7 +56,11 @@ def three_source_env(monkeypatch, hub_env):
     import tools.skills_tool as skills_tool
 
     monkeypatch.setattr(hub, "HubLockFile", lambda: _DummyLockFile([_HUB_ENTRY]))
-    monkeypatch.setattr(skills_tool, "_find_all_skills", lambda: list(_ALL_THREE_SKILLS))
+    monkeypatch.setattr(
+        skills_tool,
+        "_find_all_skills",
+        lambda *, skip_disabled=False: list(_ALL_THREE_SKILLS),
+    )
     monkeypatch.setattr(skills_sync, "_read_manifest", lambda: dict(_BUILTIN_MANIFEST))
 
     return hub_env
@@ -107,7 +111,7 @@ def test_do_list_initializes_hub_dir(monkeypatch, hub_env):
     import tools.skills_sync as skills_sync
     import tools.skills_tool as skills_tool
 
-    monkeypatch.setattr(skills_tool, "_find_all_skills", lambda: [])
+    monkeypatch.setattr(skills_tool, "_find_all_skills", lambda *, skip_disabled=False: [])
     monkeypatch.setattr(skills_sync, "_read_manifest", lambda: {})
 
     hub_dir = hub_env
@@ -152,6 +156,35 @@ def test_do_list_filter_builtin(three_source_env):
     assert "builtin-skill" in output
     assert "hub-skill" not in output
     assert "local-skill" not in output
+
+
+def test_do_list_includes_disabled_skills(monkeypatch, hub_env):
+    import hermes_cli.skills_config as skills_config
+    import tools.skills_hub as hub
+    import tools.skills_sync as skills_sync
+    import tools.skills_tool as skills_tool
+
+    monkeypatch.setattr(hub, "HubLockFile", lambda: _DummyLockFile([]))
+    monkeypatch.setattr(skills_sync, "_read_manifest", lambda: {})
+    monkeypatch.setattr(skills_config, "get_disabled_skills", lambda config: {"disabled-skill"})
+
+    def _fake_find_all_skills(*, skip_disabled=False):
+        if skip_disabled:
+            return [
+                {"name": "active-skill", "category": "demo", "description": "active"},
+                {"name": "disabled-skill", "category": "demo", "description": "disabled"},
+            ]
+        return [
+            {"name": "active-skill", "category": "demo", "description": "active"},
+        ]
+
+    monkeypatch.setattr(skills_tool, "_find_all_skills", _fake_find_all_skills)
+
+    output = _capture()
+
+    assert "active-skill" in output
+    assert "disabled-skill" in output
+    assert "inactive" in output
 
 
 def test_do_check_reports_available_updates(monkeypatch):

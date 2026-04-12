@@ -21,8 +21,8 @@ function classifyLine(line: string): "error" | "warning" | "info" | "debug" {
 }
 
 const LINE_COLORS: Record<string, string> = {
-  error: "text-red-400",
-  warning: "text-amber-400",
+  error: "text-destructive",
+  warning: "text-warning",
   info: "text-foreground",
   debug: "text-muted-foreground/60",
 };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Pause, Play, Plus, Trash2 } from "lucide-react";
+import { Clock, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import type { CronJob } from "@/lib/api";
 import { useToast } from "@/hooks/useToast";
@@ -240,6 +240,7 @@ export default function CronPage() {
                   variant="ghost"
                   size="icon"
                   title={job.status === "paused" ? "Resume" : "Pause"}
+                  aria-label={job.status === "paused" ? "Resume job" : "Pause job"}
                   onClick={() => handlePauseResume(job)}
                 >
                   {job.status === "paused" ? (
@@ -253,15 +254,17 @@ export default function CronPage() {
                   variant="ghost"
                   size="icon"
                   title="Trigger now"
+                  aria-label="Trigger job now"
                   onClick={() => handleTrigger(job)}
                 >
-                  <Play className="h-4 w-4" />
+                  <Zap className="h-4 w-4" />
                 </Button>
 
                 <Button
                   variant="ghost"
                   size="icon"
                   title="Delete"
+                  aria-label="Delete job"
                   onClick={() => handleDelete(job)}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />

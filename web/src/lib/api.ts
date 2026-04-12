@@ -134,8 +134,8 @@ export interface StatusResponse {
 
 export interface SessionInfo {
   id: string;
-  source: string;
-  model: string;
+  source: string | null;
+  model: string | null;
   title: string | null;
   started_at: number;
   ended_at: number | null;
@@ -145,7 +145,7 @@ export interface SessionInfo {
   tool_call_count: number;
   input_tokens: number;
   output_tokens: number;
-  preview: string;
+  preview: string | null;
 }
 
 export interface EnvVarInfo {
@@ -185,16 +185,19 @@ export interface AnalyticsDailyEntry {
   day: string;
   input_tokens: number;
   output_tokens: number;
+  cache_read_tokens: number;
+  reasoning_tokens: number;
+  estimated_cost: number;
+  actual_cost: number;
   sessions: number;
-  estimated_cost?: number;
 }
 
 export interface AnalyticsModelEntry {
   model: string;
   input_tokens: number;
   output_tokens: number;
+  estimated_cost: number;
   sessions: number;
-  estimated_cost?: number;
 }
 
 export interface AnalyticsResponse {
@@ -203,8 +206,11 @@ export interface AnalyticsResponse {
   totals: {
     total_input: number;
     total_output: number;
-    total_sessions: number;
+    total_cache_read: number;
+    total_reasoning: number;
     total_estimated_cost: number;
+    total_actual_cost: number;
+    total_sessions: number;
   };
 }
 

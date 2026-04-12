@@ -501,6 +501,8 @@ def do_inspect(identifier: str, console: Optional[Console] = None) -> None:
 
 def do_list(source_filter: str = "all", console: Optional[Console] = None) -> None:
     """List installed skills, distinguishing hub, builtin, and local skills."""
+    from hermes_cli.config import load_config
+    from hermes_cli.skills_config import get_disabled_skills
     from tools.skills_hub import HubLockFile, ensure_hub_dirs
     from tools.skills_sync import _read_manifest
     from tools.skills_tool import _find_all_skills
@@ -510,12 +512,13 @@ def do_list(source_filter: str = "all", console: Optional[Console] = None) -> No
     lock = HubLockFile()
     hub_installed = {e["name"]: e for e in lock.list_installed()}
     builtin_names = set(_read_manifest())
-
-    all_skills = _find_all_skills()
+    disabled = get_disabled_skills(load_config())
+    all_skills = _find_all_skills(skip_disabled=True)
 
     table = Table(title="Installed Skills")
     table.add_column("Name", style="bold cyan")
     table.add_column("Category", style="dim")
+    table.add_column("Status", style="dim")
     table.add_column("Source", style="dim")
     table.add_column("Trust", style="dim")
 
@@ -549,7 +552,15 @@ def do_list(source_filter: str = "all", console: Optional[Console] = None) -> No
 
         trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow", "local": "dim"}.get(trust, "dim")
         trust_label = "official" if source_display == "official" else trust
-        table.add_row(name, category, source_display, f"[{trust_style}]{trust_label}[/]")
+        status = "inactive" if name in disabled else "active"
+        status_style = "yellow" if status == "inactive" else "green"
+        table.add_row(
+            name,
+            category,
+            f"[{status_style}]{status}[/]",
+            source_display,
+            f"[{trust_style}]{trust_label}[/]",
+        )
 
     c.print(table)
     c.print(
