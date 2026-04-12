@@ -45,8 +45,12 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      {/* ---- Hermes header with grid-border nav ---- */}
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      {/* Global grain + warm glow (matches landing page) */}
+      <div className="noise-overlay" />
+      <div className="warm-glow" />
+
+      {/* ---- Header with grid-border nav ---- */}
+      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex h-12 max-w-[1400px] items-stretch">
           {/* Brand */}
           <div className="flex items-center border-r border-border px-5 shrink-0">
@@ -55,26 +59,26 @@ export default function App() {
             </span>
           </div>
 
-          {/* Nav grid */}
+          {/* Nav grid — Mondwest labels like the landing page nav */}
           <nav className="flex items-stretch overflow-x-auto scrollbar-none">
             {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setPage(id)}
-                className={`group relative inline-flex items-center gap-1.5 border-r border-border px-4 py-2 font-display text-xs tracking-[0.15em] uppercase whitespace-nowrap transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                className={`group relative inline-flex items-center gap-1.5 border-r border-border px-4 py-2 font-display text-[0.8rem] tracking-[0.12em] uppercase whitespace-nowrap transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   page === id
-                    ? "text-primary"
+                    ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 {label}
                 {/* Hover highlight */}
-                <span className="absolute inset-0 bg-primary pointer-events-none transition-opacity duration-150 group-hover:opacity-5 opacity-0" />
-                {/* Active indicator */}
+                <span className="absolute inset-0 bg-foreground pointer-events-none transition-opacity duration-150 group-hover:opacity-5 opacity-0" />
+                {/* Active indicator — dither bar */}
                 {page === id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-px bg-primary" />
+                  <span className="absolute bottom-0 left-0 right-0 h-px bg-foreground" />
                 )}
               </button>
             ))}
@@ -82,7 +86,7 @@ export default function App() {
 
           {/* Version badge */}
           <div className="ml-auto flex items-center px-4 text-muted-foreground">
-            <span className="font-courier text-[0.65rem] tracking-widest uppercase opacity-50">
+            <span className="font-display text-[0.7rem] tracking-[0.15em] uppercase opacity-50">
               Web UI
             </span>
           </div>
@@ -91,19 +95,19 @@ export default function App() {
 
       <main
         key={animKey}
-        className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-8"
+        className="relative z-2 mx-auto w-full max-w-[1400px] flex-1 px-6 py-8"
         style={{ animation: "fade-in 150ms ease-out" }}
       >
         <PageComponent />
       </main>
 
       {/* ---- Footer ---- */}
-      <footer className="border-t border-border">
+      <footer className="relative z-2 border-t border-border">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3">
-          <span className="font-display text-xs tracking-[0.15em] uppercase opacity-50">
+          <span className="font-display text-[0.8rem] tracking-[0.12em] uppercase opacity-50">
             Hermes Agent
           </span>
-          <span className="font-courier text-[0.65rem] tracking-widest uppercase text-primary/60">
+          <span className="font-display text-[0.7rem] tracking-[0.15em] uppercase text-foreground/40">
             Nous Research
           </span>
         </div>
