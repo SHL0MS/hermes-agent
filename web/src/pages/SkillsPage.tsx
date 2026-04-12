@@ -393,15 +393,20 @@ export default function SkillsPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium text-sm">{labelText}</span>
                           <Badge
-                            variant={ts.available ? "success" : "outline"}
+                            variant={ts.enabled ? "success" : "outline"}
                             className="text-[10px]"
                           >
-                            {ts.available ? "active" : "inactive"}
+                            {ts.enabled ? "active" : "inactive"}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">
                           {ts.description}
                         </p>
+                        {ts.enabled && !ts.configured && (
+                          <p className="text-[10px] text-amber-300/80 mb-2">
+                            Setup needed
+                          </p>
+                        )}
                         {ts.tools.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {ts.tools.map((tool) => (
@@ -417,7 +422,7 @@ export default function SkillsPage() {
                         )}
                         {ts.tools.length === 0 && (
                           <span className="text-[10px] text-muted-foreground/60">
-                            {ts.available ? `${ts.name} toolset` : "Not configured"}
+                            {ts.enabled ? `${ts.name} toolset` : "Disabled for CLI"}
                           </span>
                         )}
                       </div>

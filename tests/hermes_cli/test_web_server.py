@@ -119,6 +119,72 @@ class TestWebServerEndpoints:
         assert "hermes_home" in data
         assert "active_sessions" in data
 
+    def test_get_status_filters_unconfigured_gateway_platforms(self, monkeypatch):
+        import gateway.config as gateway_config
+        import hermes_cli.web_server as web_server
+
+        class _Platform:
+            def __init__(self, value):
+                self.value = value
+
+        class _GatewayConfig:
+            def get_connected_platforms(self):
+                return [_Platform("telegram")]
+
+        monkeypatch.setattr(web_server, "get_running_pid", lambda: 1234)
+        monkeypatch.setattr(
+            web_server,
+            "read_runtime_status",
+            lambda: {
+                "gateway_state": "running",
+                "updated_at": "2026-04-12T00:00:00+00:00",
+                "platforms": {
+                    "telegram": {"state": "connected", "updated_at": "2026-04-12T00:00:00+00:00"},
+                    "whatsapp": {"state": "retrying", "updated_at": "2026-04-12T00:00:00+00:00"},
+                    "feishu": {"state": "connected", "updated_at": "2026-04-12T00:00:00+00:00"},
+                },
+            },
+        )
+        monkeypatch.setattr(web_server, "check_config_version", lambda: (1, 1))
+        monkeypatch.setattr(gateway_config, "load_gateway_config", lambda: _GatewayConfig())
+
+        resp = self.client.get("/api/status")
+
+        assert resp.status_code == 200
+        assert resp.json()["gateway_platforms"] == {
+            "telegram": {"state": "connected", "updated_at": "2026-04-12T00:00:00+00:00"},
+        }
+
+    def test_get_status_hides_stale_platforms_when_gateway_not_running(self, monkeypatch):
+        import gateway.config as gateway_config
+        import hermes_cli.web_server as web_server
+
+        class _GatewayConfig:
+            def get_connected_platforms(self):
+                return []
+
+        monkeypatch.setattr(web_server, "get_running_pid", lambda: None)
+        monkeypatch.setattr(
+            web_server,
+            "read_runtime_status",
+            lambda: {
+                "gateway_state": "startup_failed",
+                "updated_at": "2026-04-12T00:00:00+00:00",
+                "platforms": {
+                    "whatsapp": {"state": "retrying", "updated_at": "2026-04-12T00:00:00+00:00"},
+                    "feishu": {"state": "connected", "updated_at": "2026-04-12T00:00:00+00:00"},
+                },
+            },
+        )
+        monkeypatch.setattr(web_server, "check_config_version", lambda: (1, 1))
+        monkeypatch.setattr(gateway_config, "load_gateway_config", lambda: _GatewayConfig())
+
+        resp = self.client.get("/api/status")
+
+        assert resp.status_code == 200
+        assert resp.json()["gateway_state"] == "startup_failed"
+        assert resp.json()["gateway_platforms"] == {}
+
     def test_get_config_schema(self):
         resp = self.client.get("/api/config/schema")
         assert resp.status_code == 200
@@ -502,7 +568,75 @@ class TestNewEndpoints:
         if toolsets:
             assert "name" in toolsets[0]
             assert "label" in toolsets[0]
-            assert "available" in toolsets[0]
+            assert "enabled" in toolsets[0]
+
+    def test_toolsets_list_matches_cli_enabled_state(self, monkeypatch):
+        import hermes_cli.tools_config as tools_config
+        import toolsets as toolsets_module
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(
+            tools_config,
+            "_get_effective_configurable_toolsets",
+            lambda: [
+                ("web", "🔍 Web Search & Scraping", "web_search, web_extract"),
+                ("skills", "📚 Skills", "list, view, manage"),
+                ("memory", "💾 Memory", "persistent memory across sessions"),
+            ],
+        )
+        monkeypatch.setattr(
+            tools_config,
+            "_get_platform_tools",
+            lambda config, platform, include_default_mcp_servers=False: {"web", "skills"},
+        )
+        monkeypatch.setattr(
+            tools_config,
+            "_toolset_has_keys",
+            lambda ts_key, config=None: ts_key != "web",
+        )
+        monkeypatch.setattr(
+            toolsets_module,
+            "resolve_toolset",
+            lambda name: {
+                "web": ["web_search", "web_extract"],
+                "skills": ["skills_list", "skill_view"],
+                "memory": ["memory_read"],
+            }[name],
+        )
+        monkeypatch.setattr(web_server, "load_config", lambda: {"platform_toolsets": {"cli": ["web", "skills"]}})
+
+        resp = self.client.get("/api/tools/toolsets")
+
+        assert resp.status_code == 200
+        assert resp.json() == [
+            {
+                "name": "web",
+                "label": "🔍 Web Search & Scraping",
+                "description": "web_search, web_extract",
+                "enabled": True,
+                "available": True,
+                "configured": False,
+                "tools": ["web_extract", "web_search"],
+            },
+            {
+                "name": "skills",
+                "label": "📚 Skills",
+                "description": "list, view, manage",
+                "enabled": True,
+                "available": True,
+                "configured": True,
+                "tools": ["skill_view", "skills_list"],
+            },
+            {
+                "name": "memory",
+                "label": "💾 Memory",
+                "description": "persistent memory across sessions",
+                "enabled": False,
+                "available": False,
+                "configured": True,
+                "tools": ["memory_read"],
+            },
+        ]
 
     def test_config_raw_get(self):
         resp = self.client.get("/api/config/raw")

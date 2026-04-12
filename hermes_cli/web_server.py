@@ -271,14 +271,32 @@ async def get_status():
     gateway_platforms: dict = {}
     gateway_exit_reason = None
     gateway_updated_at = None
+    configured_gateway_platforms: set[str] | None = None
+    try:
+        from gateway.config import load_gateway_config
+
+        gateway_config = load_gateway_config()
+        configured_gateway_platforms = {
+            platform.value for platform in gateway_config.get_connected_platforms()
+        }
+    except Exception:
+        configured_gateway_platforms = None
+
     runtime = read_runtime_status()
     if runtime:
         gateway_state = runtime.get("gateway_state")
         gateway_platforms = runtime.get("platforms") or {}
+        if configured_gateway_platforms is not None:
+            gateway_platforms = {
+                key: value
+                for key, value in gateway_platforms.items()
+                if key in configured_gateway_platforms
+            }
         gateway_exit_reason = runtime.get("exit_reason")
         gateway_updated_at = runtime.get("updated_at")
         if not gateway_running:
             gateway_state = gateway_state if gateway_state in ("stopped", "startup_failed") else "stopped"
+            gateway_platforms = {}
 
     active_sessions = 0
     try:
@@ -698,16 +716,32 @@ async def toggle_skill(body: SkillToggle):
 
 @app.get("/api/tools/toolsets")
 async def get_toolsets():
-    from hermes_cli.tools_config import CONFIGURABLE_TOOLSETS
-    from tools.registry import registry
-    available = registry.get_available_toolsets()
+    from hermes_cli.tools_config import (
+        _get_effective_configurable_toolsets,
+        _get_platform_tools,
+        _toolset_has_keys,
+    )
+    from toolsets import resolve_toolset
+
+    config = load_config()
+    enabled_toolsets = _get_platform_tools(
+        config,
+        "cli",
+        include_default_mcp_servers=False,
+    )
     result = []
-    for name, label, desc in CONFIGURABLE_TOOLSETS:
-        info = available.get(name, {})
+    for name, label, desc in _get_effective_configurable_toolsets():
+        try:
+            tools = sorted(set(resolve_toolset(name)))
+        except Exception:
+            tools = []
+        is_enabled = name in enabled_toolsets
         result.append({
             "name": name, "label": label, "description": desc,
-            "available": info.get("available", False),
-            "tools": info.get("tools", []),
+            "enabled": is_enabled,
+            "available": is_enabled,
+            "configured": _toolset_has_keys(name, config),
+            "tools": tools,
         })
     return result
 
@@ -818,7 +852,10 @@ def mount_spa(application: FastAPI):
             and file_path.is_file()
         ):
             return FileResponse(file_path)
-        return FileResponse(WEB_DIST / "index.html")
+        return FileResponse(
+            WEB_DIST / "index.html",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        )
 
 
 mount_spa(app)

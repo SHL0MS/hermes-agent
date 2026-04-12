@@ -237,6 +237,7 @@ export interface ToolsetInfo {
   name: string;
   label: string;
   description: string;
-  available: boolean;
+  enabled: boolean;
+  configured: boolean;
   tools: string[];
 }
