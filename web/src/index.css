@@ -1,55 +1,44 @@
 @import "tailwindcss";
+@import "./nous/ui/grid/grid.css" layer(components);
 
 /* ------------------------------------------------------------------ */
 /* Hermes Agent — Design tokens                                        */
-/* Matched to hermes-agent.nousresearch.com (dark teal theme)          */
+/* Uses @nous/design-language color system (bg/mg/fg layers)           */
 /* ------------------------------------------------------------------ */
 
-/* --- Font faces --- */
-@font-face { font-family: "Collapse"; src: url("/fonts/Collapse-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Collapse"; src: url("/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
-@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
-@font-face { font-family: "RulesCompressed"; src: url("/fonts/RulesCompressed-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "RulesCompressed"; src: url("/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "RulesExpanded"; src: url("/fonts/RulesExpanded-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "RulesExpanded"; src: url("/fonts/RulesExpanded-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
-@font-face { font-family: "Mondwest"; src: url("/fonts/Mondwest-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+/* --- Font faces (canonical from design-language/src/ui/fonts.css) --- */
+@font-face { font-family: "Collapse"; font-weight: 400; font-display: swap; src: url("/fonts/Collapse-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Collapse"; font-weight: 700; font-display: swap; src: url("/fonts/Collapse-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Courier Prime"; font-weight: 400; font-display: swap; src: url("/fonts/CourierPrime-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Courier Prime"; font-weight: 700; font-display: swap; src: url("/fonts/CourierPrime-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Rules Compressed"; font-weight: 400; font-display: swap; src: url("/fonts/RulesCompressed-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Rules Compressed"; font-weight: 600; font-display: swap; src: url("/fonts/RulesCompressed-Medium.woff2") format("woff2"); }
+@font-face { font-family: "Rules Expanded"; font-weight: 400; font-display: swap; src: url("/fonts/RulesExpanded-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Rules Expanded"; font-weight: 700; font-display: swap; src: url("/fonts/RulesExpanded-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Mondwest"; font-weight: 400; font-display: swap; src: url("/fonts/Mondwest-Regular.woff2") format("woff2"); }
 
-@theme {
-  /* ---- Hermes palette (dark teal, from live site) ---- */
-  --color-background: #041C1C;
-  --color-foreground: #ffe6cb;
-  --color-card: #062424;
-  --color-card-foreground: #ffe6cb;
-  --color-primary: #ffe6cb;
-  --color-primary-foreground: #041C1C;
-  --color-secondary: #0a2e2e;
-  --color-secondary-foreground: #ffe6cb;
-  --color-muted: #083030;
-  --color-muted-foreground: #8aaa9a;
-  --color-accent: #0c3838;
-  --color-accent-foreground: #ffe6cb;
-  --color-destructive: #fb2c36;
-  --color-destructive-foreground: #fff;
-  --color-success: #4ade80;
-  --color-warning: #ffbd38;
-  --color-border: color-mix(in srgb, #ffe6cb 15%, transparent);
-  --color-input: color-mix(in srgb, #ffe6cb 15%, transparent);
-  --color-ring: #ffe6cb;
-  --color-popover: #062424;
-  --color-popover-foreground: #ffe6cb;
-
-  /* ---- Font stacks ---- */
-  --font-sans: "Mondwest", Arial, sans-serif;
-  --font-mono: "Courier Prime", "Courier New", monospace;
-  --font-display: "Mondwest", Arial, sans-serif;
-  --font-expanded: "RulesExpanded", Arial, sans-serif;
-  --font-compressed: "RulesCompressed", Arial, sans-serif;
-}
-
-/* ---- Heatmap color scale (dark mode) ---- */
+/* --- Lens layer vars (canonical from design-language globals.css) ---
+ * These are the source-of-truth colors. Set by applyLens() in JS.
+ * LENS_0 (dark) is the default. */
 :root {
+  --background: color-mix(in srgb, #041C1C 100%, transparent);
+  --background-base: #041C1C;
+  --background-alpha: 1;
+  --midground: color-mix(in srgb, #ffe6cb 100%, transparent);
+  --midground-base: #ffe6cb;
+  --midground-alpha: 1;
+  --foreground: color-mix(in srgb, #FFFFFF 0%, transparent);
+  --foreground-base: #FFFFFF;
+  --foreground-alpha: 0;
+
+  /* Font stacks (canonical var names from design-language fonts.css) */
+  --font-sans: "Collapse", sans-serif;
+  --font-mono: "Courier Prime", monospace;
+  --font-rules-compressed: "Rules Compressed", sans-serif;
+  --font-rules-expanded: "Rules Expanded", sans-serif;
+  --font-mondwest: "Mondwest", sans-serif;
+
+  /* Heatmap scale */
   --heatmap-0: oklch(0.35 0.02 170);
   --heatmap-1: oklch(0.35 0.08 160);
   --heatmap-2: oklch(0.45 0.12 160);
@@ -57,7 +46,62 @@
   --heatmap-4: oklch(0.72 0.18 155);
 }
 
-/* ---- Light mode overrides ---- */
+/* --- Tailwind theme: derive from Lens vars ---
+ * Tailwind v4 @theme generates static custom properties.
+ * We map them to the Lens layer system so components using
+ * bg-background, text-foreground etc. get the right colors. */
+@theme {
+  --color-background: var(--background-base);
+  --color-foreground: var(--midground-base);
+  --color-gesso: #eaeaea;
+
+  /* Card = slightly lighter than background */
+  --color-card: color-mix(in srgb, var(--midground-base) 3%, var(--background-base));
+  --color-card-foreground: var(--midground-base);
+
+  /* Primary = midground (the accent color) */
+  --color-primary: var(--midground-base);
+  --color-primary-foreground: var(--background-base);
+
+  /* Secondary/Muted/Accent = bg-shifted tints */
+  --color-secondary: color-mix(in srgb, var(--midground-base) 8%, var(--background-base));
+  --color-secondary-foreground: var(--midground-base);
+  --color-muted: color-mix(in srgb, var(--midground-base) 10%, var(--background-base));
+  --color-muted-foreground: color-mix(in srgb, var(--midground-base) 55%, var(--background-base));
+  --color-accent: color-mix(in srgb, var(--midground-base) 14%, var(--background-base));
+  --color-accent-foreground: var(--midground-base);
+
+  /* Semantic */
+  --color-destructive: #fb2c36;
+  --color-destructive-foreground: #fff;
+  --color-success: #4ade80;
+  --color-warning: #ffbd38;
+
+  /* Borders = midground at low alpha */
+  --color-border: color-mix(in srgb, var(--midground-base) 15%, transparent);
+  --color-input: color-mix(in srgb, var(--midground-base) 15%, transparent);
+  --color-ring: var(--midground-base);
+  --color-popover: color-mix(in srgb, var(--midground-base) 3%, var(--background-base));
+  --color-popover-foreground: var(--midground-base);
+
+  /* Midground color for direct use */
+  --color-midground: var(--midground-base);
+
+  /* Font stacks for Tailwind */
+  --font-sans: var(--font-mondwest), Arial, sans-serif;
+  --font-mono: "Courier Prime", "Courier New", monospace;
+  --font-display: var(--font-mondwest), Arial, sans-serif;
+  --font-expanded: var(--font-rules-expanded), Arial, sans-serif;
+  --font-compressed: var(--font-rules-compressed), Arial, sans-serif;
+}
+
+/* ---- Light mode overrides (applied by applyLens in JS) ----
+ * When LENS_5I is applied, --background-base becomes #170d02,
+ * --midground-base becomes #FFAC02, --foreground becomes white.
+ * The Tailwind tokens above derive from these vars automatically.
+ *
+ * However, Tailwind v4 @theme tokens are static at build time.
+ * For runtime light mode we need !important overrides. */
 html.light {
   --color-background: #f5f0e8 !important;
   --color-foreground: #1a1a1a !important;
@@ -76,12 +120,11 @@ html.light {
   --color-ring: #1a1a1a !important;
   --color-popover: #ebe6dc !important;
   --color-popover-foreground: #1a1a1a !important;
+  --color-midground: #1a1a1a !important;
   --color-destructive: #dc2626 !important;
   --color-success: #16a34a !important;
   --color-warning: #ca8a04 !important;
-}
 
-html.light {
   --heatmap-0: oklch(0.88 0.01 90) !important;
   --heatmap-1: oklch(0.78 0.10 155) !important;
   --heatmap-2: oklch(0.65 0.14 155) !important;
@@ -89,167 +132,150 @@ html.light {
   --heatmap-4: oklch(0.42 0.14 155) !important;
 }
 
-html.light .noise-overlay {
-  opacity: 0.03;
-  mix-blend-mode: multiply;
-}
-html.light .warm-glow {
-  opacity: 0.08;
-  background: radial-gradient(ellipse at 0% 0%, rgba(180,140,60,0.2) 0%, transparent 60%);
-}
-html.light .blend-lighter {
-  mix-blend-mode: normal;
-}
+html.light .noise-overlay { opacity: 0.03; mix-blend-mode: multiply; }
+html.light .warm-glow { opacity: 0.08; background: radial-gradient(ellipse at 0% 0%, rgba(180,140,60,0.2) 0%, transparent 60%); }
+html.light .blend-lighter { mix-blend-mode: normal; }
 
-/* ---- Global body ---- */
-body {
-  margin: 0;
-  font-family: "Mondwest", Arial, sans-serif;
-  background: var(--color-background);
-  color: var(--color-foreground);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
+/* ---- Font utilities (canonical from design-language globals.css) ---- */
+@utility font-compressed { font-family: var(--font-rules-compressed); }
+@utility font-expanded { font-family: var(--font-rules-expanded); }
+@utility font-mondwest { font-family: var(--font-mondwest); }
+@utility font-courier { font-family: "Courier New", var(--font-mono), monospace; }
 
-/* ---- Selection ---- */
-::selection {
-  background: var(--color-foreground);
-  color: var(--color-background);
-}
-
-/* ---- Scrollbars (thin, subtle) ---- */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-*:hover {
-  scrollbar-color: color-mix(in srgb, var(--color-foreground) 15%, transparent) transparent;
-}
-html, body {
-  scrollbar-color: color-mix(in srgb, var(--color-foreground) 25%, transparent) transparent;
-}
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-foreground) 20%, transparent);
-  border-radius: 2px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-foreground) 35%, transparent);
-}
-
-/* ---- Hide scrollbar utility ---- */
-.scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
-}
-
-/* ---- Code blocks ---- */
-code {
-  font-family: "Courier Prime", "Courier New", monospace;
-  font-size: 0.85em;
-  padding: 0.15em 0.4em;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-}
-
-/* ---- Dither texture ---- */
-.dither {
-  background: repeating-conic-gradient(currentColor 0% 25%, #0000 0% 50%) 0 0 / 2px 2px;
-}
-
-/* ---- Blink cursor (only on group hover, like canonical) ---- */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-.blink {
-  display: none;
-}
-.group:hover .blink {
-  display: inline-block;
-  animation: blink 1s step-end infinite;
-}
-
-/* ---- Page transitions ---- */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes tooltip-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(2px) scale(0.97); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
-}
-.animate-tooltip-in {
-  animation: tooltip-in 120ms ease-out;
-}
-@keyframes toast-in {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes toast-out {
-  from { opacity: 1; transform: translateX(0); }
-  to   { opacity: 0; transform: translateX(16px); }
-}
-
-/* ---- Plus-lighter blend for headings ---- */
-.blend-lighter {
-  mix-blend-mode: plus-lighter;
-}
-
-/* ---- Font utilities ---- */
-.font-display { font-family: "Mondwest", Arial, sans-serif; }
-.font-expanded { font-family: "RulesExpanded", Arial, sans-serif; }
-.font-compressed { font-family: "RulesCompressed", Arial, sans-serif; }
-.font-courier { font-family: "Courier Prime", "Courier New", monospace; }
+/* ---- Additional font utilities ---- */
+.font-display { font-family: var(--font-mondwest), Arial, sans-serif; }
 .font-collapse { font-family: "Collapse", Arial, sans-serif; }
 .font-mono-ui { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; }
 
-/* ---- Subtle grain overlay for badges ---- */
-.grain {
-  position: relative;
+/* ---- Base layer (canonical from design-language globals.css) ---- */
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+
+    &:hover {
+      scrollbar-color: color-mix(in srgb, var(--midground-base) 20%, transparent) transparent;
+    }
+  }
+
+  ::-webkit-scrollbar { width: 0.25rem; height: 0.25rem; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-button { display: none; }
+  ::-webkit-scrollbar-thumb { background: transparent; min-height: 1rem; }
+  *:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--midground-base) 20%, transparent); }
+
+  html, body { scrollbar-color: color-mix(in srgb, var(--midground-base) 65%, transparent) transparent; }
+  html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--midground-base) 65%, transparent); }
+
+  body {
+    margin: 0;
+    font-family: var(--font-mondwest), Arial, sans-serif;
+    background: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  *::selection, code {
+    background: var(--selection-bg, var(--midground-base));
+    color: var(--background-base);
+  }
+
+  code {
+    font-family: var(--font-mono), monospace;
+    font-size: 0.85em;
+    padding: 0.15em 0.4em;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--midground-base) 8%, transparent);
+  }
 }
-.grain::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.12;
+
+/* ---- Hide scrollbar utility ---- */
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* ---- Dither texture (canonical from design-language globals.css) ---- */
+.dither {
+  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 2px 2px;
+}
+
+/* ---- Blink cursor (canonical from design-language globals.css) ---- */
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.group:hover .blink { animation: blink 1s step-end infinite; }
+
+/* ---- Arc border — animated gradient stroke from design-language ---- */
+@keyframes gradient-stroke { 0% { background-position: 15% 15%; } 100% { background-position: 75% 75%; } }
+
+.arc-border {
+  --arc-c0: color-mix(in srgb, var(--foreground) var(--_t, 0%), transparent);
+  --arc-c1: var(--midground);
+  --arc-c2: var(--background);
+  --arc-angle: 160deg;
+  --arc-width: 1.25px;
+  --arc-inset: -2px;
+  --arc-duration: 2.23s;
+  --arc-gradient: linear-gradient(
+    var(--arc-angle),
+    transparent 0%, var(--arc-c0) 15%, var(--arc-c1) 20%, var(--arc-c2) 25%,
+    transparent 35%, transparent 40%, var(--arc-c0) 55%, var(--arc-c1) 60%,
+    var(--arc-c2) 65%, transparent 75%, transparent 80%, var(--arc-c0) 95%, var(--arc-c1) 100%
+  );
+
   pointer-events: none;
+  position: absolute;
+  z-index: -1;
+  overflow: hidden;
+  inset: var(--arc-inset);
+  padding: var(--arc-width);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--arc-gradient);
+    background-size: 300% 300%;
+    animation: gradient-stroke var(--arc-duration) linear infinite;
+  }
+}
+
+/* ---- Page transitions ---- */
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tooltip-in { from { opacity: 0; transform: translateX(-50%) translateY(2px) scale(0.97); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+.animate-tooltip-in { animation: tooltip-in 120ms ease-out; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toast-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(16px); } }
+
+/* ---- Plus-lighter blend for headings ---- */
+.blend-lighter { mix-blend-mode: plus-lighter; }
+
+/* ---- Subtle grain overlay for badges ---- */
+.grain { position: relative; }
+.grain::after {
+  content: ""; position: absolute; inset: 0; opacity: 0.12; pointer-events: none;
   background: repeating-conic-gradient(currentColor 0% 25%, #0000 0% 50%) 0 0 / 2px 2px;
 }
 
-/* ---- Global noise grain (canonical: color-dodge, #eaeaea, high density) ---- */
+/* ---- Global noise grain (CSS approximation of design-language WebGL shader) ---- */
 .noise-overlay {
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 101;
-  mix-blend-mode: color-dodge;
-  opacity: 0.10;
+  pointer-events: none; position: fixed; inset: 0; z-index: 101;
+  mix-blend-mode: color-dodge; opacity: 0.10;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='%23eaeaea' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
   background-size: 512px 512px;
 }
 
-/* ---- Vignette (canonical: top-left amber radial, lighten blend) ---- */
+/* ---- Vignette (CSS approximation of design-language Vignette component) ---- */
 .warm-glow {
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 99;
-  mix-blend-mode: lighten;
-  opacity: 0.22;
+  pointer-events: none; position: fixed; inset: 0; z-index: 99;
+  mix-blend-mode: lighten; opacity: 0.22;
   background: radial-gradient(ellipse at 0% 0%, rgba(255,189,56,0.35) 0%, rgba(255,189,56,0) 60%);
 }
 
 /* ---- Reduced motion ---- */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
