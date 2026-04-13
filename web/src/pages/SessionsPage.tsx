@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   MessageSquare,
   Search,
   Trash2,
@@ -18,6 +20,7 @@ import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 const ROLE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   user: { bg: "bg-primary/10", text: "text-primary", label: "User" },
@@ -108,6 +111,7 @@ function SessionRow({
   const [messages, setMessages] = useState<SessionMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (isExpanded && messages === null && !loading) {
@@ -172,6 +176,36 @@ function SessionRow({
           </Badge>
           <Button
             variant="ghost"
+            size="sm"
+            className={`h-7 text-[0.6rem] gap-1 transition-all ${
+              copied
+                ? "text-success hover:text-success"
+                : "text-muted-foreground"
+            }`}
+            aria-label={copied ? "Command copied" : "Copy resume command"}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(`hermes resume ${session.id}`).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 3000);
+              });
+            }}
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3" />
+                <span className="hidden sm:inline">Copied — paste into terminal</span>
+                <span className="sm:hidden">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span className="hidden sm:inline">Open in CLI</span>
+              </>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
             size="icon"
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
             aria-label="Delete session"
@@ -216,6 +250,7 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "longest" | "shortest">("newest");
 
   const loadSessions = useCallback(() => {
     api
@@ -250,6 +285,15 @@ export default function SessionsPage() {
     );
   });
 
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "newest": return b.last_active - a.last_active;
+      case "oldest": return a.last_active - b.last_active;
+      case "longest": return b.message_count - a.message_count;
+      case "shortest": return a.message_count - b.message_count;
+    }
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -269,18 +313,30 @@ export default function SessionsPage() {
             {sessions.length}
           </Badge>
         </div>
-        <div className="relative w-64">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search sessions..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-xs"
-          />
+        <div className="flex items-center gap-2">
+          <Select
+            className="h-8 text-xs w-32"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          >
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="longest">Longest</option>
+            <option value="shortest">Shortest</option>
+          </Select>
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search sessions..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 h-8 text-xs"
+            />
+          </div>
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {sorted.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <Clock className="h-8 w-8 mb-3 opacity-40" />
           <p className="text-sm font-medium">
@@ -292,7 +348,7 @@ export default function SessionsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {filtered.map((s) => (
+          {sorted.map((s) => (
             <SessionRow
               key={s.id}
               session={s}

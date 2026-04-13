@@ -4,7 +4,9 @@ import {
   Coins,
   Cpu,
   Database,
+  Grid3X3,
   Hash,
+  PieChart,
   TrendingUp,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -13,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 const PERIODS = [
+  { label: "Today", days: 1 },
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
   { label: "90d", days: 90 },
@@ -51,16 +54,18 @@ function SummaryCard({
   label,
   value,
   sub,
+  title,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   sub?: string;
+  title?: string;
 }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium">{label}</CardTitle>
+        <CardTitle className="text-sm font-medium" title={title}>{label}</CardTitle>
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
@@ -85,7 +90,7 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
         </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="h-2.5 w-2.5 rounded-sm bg-[#ffe6cb]" />
+            <div className="h-2.5 w-2.5 rounded-sm bg-foreground/60" />
             Input
           </div>
           <div className="flex items-center gap-1.5">
@@ -122,7 +127,7 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
                 </div>
                 {/* Input bar */}
                 <div
-                  className="w-full bg-[#ffe6cb]/70"
+                  className="w-full bg-foreground/50"
                   style={{ height: Math.max(inputH, total > 0 ? 1 : 0) }}
                 />
                 {/* Output bar */}
@@ -184,10 +189,10 @@ function DailyTable({ daily }: { daily: AnalyticsDailyEntry[] }) {
                     <td className="py-2 pr-4 font-medium">{formatDate(d.day)}</td>
                     <td className="text-right py-2 px-4 text-muted-foreground">{d.sessions}</td>
                     <td className="text-right py-2 px-4">
-                      <span className="text-[#ffe6cb]">{formatTokens(d.input_tokens)}</span>
+                      <span className="text-foreground">{formatTokens(d.input_tokens)}</span>
                     </td>
                     <td className="text-right py-2 px-4">
-                      <span className="text-emerald-400">{formatTokens(d.output_tokens)}</span>
+                      <span className="text-emerald-500">{formatTokens(d.output_tokens)}</span>
                     </td>
                     <td className="text-right py-2 px-4 text-muted-foreground">
                       {cacheHitPct > 0 ? `${cacheHitPct}%` : "—"}
@@ -240,9 +245,9 @@ function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
                   </td>
                   <td className="text-right py-2 px-4 text-muted-foreground">{m.sessions}</td>
                   <td className="text-right py-2 px-4">
-                    <span className="text-[#ffe6cb]">{formatTokens(m.input_tokens)}</span>
+                    <span className="text-foreground">{formatTokens(m.input_tokens)}</span>
                     {" / "}
-                    <span className="text-emerald-400">{formatTokens(m.output_tokens)}</span>
+                    <span className="text-emerald-500">{formatTokens(m.output_tokens)}</span>
                   </td>
                   <td className="text-right py-2 pl-4 text-muted-foreground">
                     {m.estimated_cost > 0 ? formatCost(m.estimated_cost) : "—"}
@@ -251,6 +256,215 @@ function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
               ))}
             </tbody>
           </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActivityHeatmap({ daily }: { daily: AnalyticsDailyEntry[] }) {
+  if (daily.length === 0) return null;
+
+  // Build a map of day -> sessions
+  const dayMap = new Map(daily.map((d) => [d.day, d]));
+  const maxSessions = Math.max(...daily.map((d) => d.sessions), 1);
+
+  // Generate all days in range
+  const startDate = new Date(daily[0].day + "T00:00:00");
+  const endDate = new Date(daily[daily.length - 1].day + "T00:00:00");
+  const allDays: string[] = [];
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    allDays.push(d.toISOString().slice(0, 10));
+  }
+
+  // Intensity levels (0-4)
+  function intensity(sessions: number): number {
+    if (sessions === 0) return 0;
+    const ratio = sessions / maxSessions;
+    if (ratio <= 0.25) return 1;
+    if (ratio <= 0.5) return 2;
+    if (ratio <= 0.75) return 3;
+    return 4;
+  }
+
+  // Colors matching theme
+  const COLORS = [
+    "bg-border",           // 0: no activity
+    "bg-emerald-900/60",   // 1: low
+    "bg-emerald-700/70",   // 2: medium
+    "bg-emerald-500/80",   // 3: high
+    "bg-emerald-400",      // 4: max
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Grid3X3 className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Activity</CardTitle>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span>Less</span>
+            {COLORS.map((c, i) => (
+              <div key={i} className={`h-2.5 w-2.5 ${c}`} />
+            ))}
+            <span>More</span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-[3px]">
+          {allDays.map((day) => {
+            const entry = dayMap.get(day);
+            const sessions = entry?.sessions ?? 0;
+            const level = intensity(sessions);
+            const cost = entry ? bestCost(entry) : 0;
+            return (
+              <div
+                key={day}
+                className={`h-3 w-3 ${COLORS[level]} transition-colors`}
+                title={`${formatDate(day)}: ${sessions} session${sessions !== 1 ? "s" : ""}${cost > 0 ? `, ${formatCost(cost)}` : ""}`}
+              />
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModelDonut({ models }: { models: AnalyticsModelEntry[] }) {
+  if (models.length === 0) return null;
+
+  const totalTokens = models.reduce((s, m) => s + m.input_tokens + m.output_tokens, 0);
+  if (totalTokens === 0) return null;
+
+  // Sort by usage, take top 5, group rest as "Other"
+  const sorted = [...models].sort((a, b) => (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens));
+  const top = sorted.slice(0, 5);
+  const otherTokens = sorted.slice(5).reduce((s, m) => s + m.input_tokens + m.output_tokens, 0);
+
+  const DONUT_COLORS = [
+    "#ffe6cb",   // cream (foreground)
+    "#4ade80",   // emerald
+    "#60a5fa",   // blue
+    "#f59e0b",   // amber
+    "#a78bfa",   // violet
+    "#6b7280",   // gray (other)
+  ];
+
+  const segments: { label: string; tokens: number; pct: number; color: string }[] = top.map((m, i) => ({
+    label: m.model.split("/").pop() ?? m.model,
+    tokens: m.input_tokens + m.output_tokens,
+    pct: Math.round(((m.input_tokens + m.output_tokens) / totalTokens) * 100),
+    color: DONUT_COLORS[i],
+  }));
+  if (otherTokens > 0) {
+    segments.push({
+      label: "Other",
+      tokens: otherTokens,
+      pct: Math.round((otherTokens / totalTokens) * 100),
+      color: DONUT_COLORS[5],
+    });
+  }
+
+  // Build conic-gradient stops
+  let cumPct = 0;
+  const stops = segments.map((s) => {
+    const start = cumPct;
+    cumPct += s.pct;
+    return `${s.color} ${start}% ${cumPct}%`;
+  }).join(", ");
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <PieChart className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Model Distribution</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-8">
+          {/* Donut */}
+          <div
+            className="h-32 w-32 shrink-0 rounded-full"
+            style={{
+              background: `conic-gradient(${stops})`,
+              mask: "radial-gradient(circle at center, transparent 40%, black 41%)",
+              WebkitMask: "radial-gradient(circle at center, transparent 40%, black 41%)",
+            }}
+          />
+          {/* Legend */}
+          <div className="flex flex-col gap-1.5 min-w-0">
+            {segments.map((s) => (
+              <div key={s.label} className="flex items-center gap-2 text-xs">
+                <div className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: s.color }} />
+                <span className="truncate font-mono-ui text-[0.7rem]">{s.label}</span>
+                <span className="text-muted-foreground ml-auto shrink-0">{s.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CostTrend({ daily }: { daily: AnalyticsDailyEntry[] }) {
+  if (daily.length < 2) return null;
+
+  const costs = daily.map((d) => bestCost(d));
+  const maxCost = Math.max(...costs, 0.01);
+  const totalCost = costs.reduce((a, b) => a + b, 0);
+  if (totalCost === 0) return null;
+
+  const W = 600;
+  const H = 100;
+  const PAD = 4;
+
+  const points = costs.map((c, i) => {
+    const x = PAD + (i / (costs.length - 1)) * (W - 2 * PAD);
+    const y = H - PAD - (c / maxCost) * (H - 2 * PAD);
+    return `${x},${y}`;
+  });
+
+  const areaPoints = [
+    `${PAD},${H - PAD}`,
+    ...points,
+    `${W - PAD},${H - PAD}`,
+  ].join(" ");
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Coins className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Cost Trend</CardTitle>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            Total: {formatCost(totalCost)}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-24" preserveAspectRatio="none">
+          {/* Area fill */}
+          <polygon points={areaPoints} className="fill-emerald-500/15" />
+          {/* Line */}
+          <polyline
+            points={points.join(" ")}
+            fill="none"
+            className="stroke-emerald-500"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+          <span>{daily.length > 0 ? formatDate(daily[0].day) : ""}</span>
+          <span>{daily.length > 0 ? formatDate(daily[daily.length - 1].day) : ""}</span>
         </div>
       </CardContent>
     </Card>
@@ -326,6 +540,7 @@ export default function AnalyticsPage() {
                 ? `${Math.round((data.totals.total_cache_read / (data.totals.total_input + data.totals.total_cache_read)) * 100)}%`
                 : "—"}
               sub={`${formatTokens(data.totals.total_cache_read)} tokens from cache`}
+              title="Percentage of input tokens served from prompt cache vs fresh computation"
             />
             <SummaryCard
               icon={Coins}
@@ -343,6 +558,15 @@ export default function AnalyticsPage() {
               value={String(data.totals.total_sessions)}
               sub={`~${(data.totals.total_sessions / days).toFixed(1)}/day avg`}
             />
+          </div>
+
+          {/* Activity heatmap */}
+          <ActivityHeatmap daily={data.daily} />
+
+          {/* Model distribution + Cost trend side by side */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ModelDonut models={data.by_model} />
+            <CostTrend daily={data.daily} />
           </div>
 
           {/* Bar chart */}

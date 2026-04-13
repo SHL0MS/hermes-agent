@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { FileText, RefreshCw } from "lucide-react";
+import { Check, Copy, FileText, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,7 @@ export default function LogsPage() {
   const [lines, setLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [logsCopied, setLogsCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchLogs = useCallback(() => {
@@ -125,6 +126,16 @@ export default function LogsPage() {
                   </Badge>
                 )}
               </div>
+              <Button variant="outline" size="sm" className="text-xs h-7"
+                onClick={() => {
+                  navigator.clipboard.writeText(lines.join("\n")).then(() => {
+                    setLogsCopied(true);
+                    setTimeout(() => setLogsCopied(false), 2000);
+                  });
+                }}>
+                {logsCopied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                {logsCopied ? "Copied" : "Copy"}
+              </Button>
               <Button variant="outline" size="sm" onClick={fetchLogs} className="text-xs h-7">
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Refresh

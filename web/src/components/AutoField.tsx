@@ -1,7 +1,9 @@
+import { Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip } from "@/components/ui/tooltip";
 
 function FieldHint({ schema, schemaKey }: { schema: Record<string, unknown>; schemaKey: string }) {
   const keyPath = schemaKey.includes(".") ? schemaKey : "";
@@ -30,7 +32,14 @@ export function AutoField({
     return (
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col gap-0.5">
-          <Label className="text-sm">{label}</Label>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-sm">{label}</Label>
+            {!!schema.description && (
+              <Tooltip content={String(schema.description)}>
+                <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+              </Tooltip>
+            )}
+          </div>
           <FieldHint schema={schema} schemaKey={schemaKey} />
         </div>
         <Switch checked={!!value} onCheckedChange={onChange} />
@@ -42,7 +51,14 @@ export function AutoField({
     const options = (schema.options as string[]) ?? [];
     return (
       <div className="grid gap-1.5">
-        <Label className="text-sm">{label}</Label>
+        <div className="flex items-center gap-1.5">
+          <Label className="text-sm">{label}</Label>
+          {!!schema.description && (
+            <Tooltip content={String(schema.description)}>
+              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+            </Tooltip>
+          )}
+        </div>
         <FieldHint schema={schema} schemaKey={schemaKey} />
         <Select value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
           {options.map((opt) => (
@@ -58,7 +74,14 @@ export function AutoField({
   if (schema.type === "number") {
     return (
       <div className="grid gap-1.5">
-        <Label className="text-sm">{label}</Label>
+        <div className="flex items-center gap-1.5">
+          <Label className="text-sm">{label}</Label>
+          {!!schema.description && (
+            <Tooltip content={String(schema.description)}>
+              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+            </Tooltip>
+          )}
+        </div>
         <FieldHint schema={schema} schemaKey={schemaKey} />
         <Input
           type="number"
@@ -82,7 +105,14 @@ export function AutoField({
   if (schema.type === "text") {
     return (
       <div className="grid gap-1.5">
-        <Label className="text-sm">{label}</Label>
+        <div className="flex items-center gap-1.5">
+          <Label className="text-sm">{label}</Label>
+          {!!schema.description && (
+            <Tooltip content={String(schema.description)}>
+              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+            </Tooltip>
+          )}
+        </div>
         <FieldHint schema={schema} schemaKey={schemaKey} />
         <textarea
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -96,7 +126,14 @@ export function AutoField({
   if (schema.type === "list") {
     return (
       <div className="grid gap-1.5">
-        <Label className="text-sm">{label}</Label>
+        <div className="flex items-center gap-1.5">
+          <Label className="text-sm">{label}</Label>
+          {!!schema.description && (
+            <Tooltip content={String(schema.description)}>
+              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+            </Tooltip>
+          )}
+        </div>
         <FieldHint schema={schema} schemaKey={schemaKey} />
         <Input
           value={Array.isArray(value) ? value.join(", ") : String(value ?? "")}
@@ -136,7 +173,14 @@ export function AutoField({
 
   return (
     <div className="grid gap-1.5">
-      <Label className="text-sm">{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label className="text-sm">{label}</Label>
+        {!!schema.description && (
+          <Tooltip content={String(schema.description)}>
+            <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+          </Tooltip>
+        )}
+      </div>
       <FieldHint schema={schema} schemaKey={schemaKey} />
       <Input value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
     </div>

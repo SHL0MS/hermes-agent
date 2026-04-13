@@ -1,11 +1,20 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  Calendar,
   Clock,
+  Clock as ClockIcon,
   Cpu,
   Database,
+  FolderOpen,
+  Grid2X2,
+  HardDrive,
+  MessageCircle,
+  MessageSquare,
+  Phone,
   Radio,
+  Send,
   Shield,
   Wifi,
   WifiOff,
@@ -27,6 +36,14 @@ const GATEWAY_STATE_DISPLAY: Record<string, { badge: "success" | "warning" | "de
   starting: { badge: "warning", label: "Starting" },
   startup_failed: { badge: "destructive", label: "Failed" },
   stopped: { badge: "outline", label: "Stopped" },
+};
+
+const PLATFORM_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  discord: MessageCircle,
+  telegram: Send,
+  slack: MessageSquare,
+  whatsapp: Phone,
+  matrix: Grid2X2,
 };
 
 function gatewayValue(status: StatusResponse): string {
@@ -89,6 +106,7 @@ export default function StatusPage() {
       value: gatewayValue(status),
       badgeText: gwBadge.label,
       badgeVariant: gwBadge.badge,
+      title: "Process ID of the running gateway daemon",
     },
     {
       icon: Shield,
@@ -96,6 +114,7 @@ export default function StatusPage() {
       value: `v${status.config_version}`,
       badgeText: configNeedsMigration ? "Migrate" : "Current",
       badgeVariant: (configNeedsMigration ? "warning" : "success") as "warning" | "success",
+      title: "Internal version number. Bump indicates schema changes.",
     },
   ];
 
@@ -144,10 +163,10 @@ export default function StatusPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {items.map(({ icon: Icon, label, value, badgeText, badgeVariant }) => (
+        {items.map(({ icon: Icon, label, value, badgeText, badgeVariant, title }) => (
           <Card key={label}>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">{label}</CardTitle>
+              <CardTitle className="text-sm font-medium" title={title}>{label}</CardTitle>
               <Icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
 
@@ -164,6 +183,49 @@ export default function StatusPage() {
           </Card>
         ))}
       </div>
+
+      {status.gateway_running && (
+        <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
+          <span>PID: <span className="font-mono-ui">{status.gateway_pid}</span></span>
+          <span>State: <span className="font-mono-ui">{status.gateway_state}</span></span>
+          {status.gateway_updated_at && (
+            <span>Updated: {isoTimeAgo(status.gateway_updated_at)}</span>
+          )}
+        </div>
+      )}
+      {!status.gateway_running && status.gateway_exit_reason && (
+        <div className="text-xs text-destructive/80 px-1">
+          Gateway stopped: {status.gateway_exit_reason}
+        </div>
+      )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <HardDrive className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">System Info</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { label: "Hermes Home", value: status.hermes_home, icon: FolderOpen },
+              { label: "Config Path", value: status.config_path, icon: FolderOpen },
+              { label: "Env Path", value: status.env_path, icon: FolderOpen },
+              { label: "Release Date", value: status.release_date, icon: Calendar },
+              { label: "Total Sessions", value: `${sessions.length} sessions`, icon: ClockIcon },
+            ].map(({ label, value, icon: InfoIcon }) => (
+              <div key={label} className="flex items-start gap-2">
+                <InfoIcon className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[0.65rem] text-muted-foreground uppercase tracking-wider">{label}</div>
+                  <div className="text-xs text-foreground truncate font-mono-ui" title={value}>{value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {platforms.length > 0 && (
         <PlatformsCard platforms={platforms} />
@@ -262,7 +324,8 @@ function PlatformsCard({ platforms }: PlatformsCardProps) {
             variant: "outline" as const,
             label: info.state,
           };
-          const IconComponent = info.state === "connected" ? Wifi : info.state === "fatal" ? AlertTriangle : WifiOff;
+          const PlatformIcon = PLATFORM_ICONS[name.toLowerCase()] ?? Radio;
+          const StateIcon = info.state === "connected" ? Wifi : info.state === "fatal" ? AlertTriangle : WifiOff;
 
           return (
             <div
@@ -270,25 +333,32 @@ function PlatformsCard({ platforms }: PlatformsCardProps) {
               className="flex items-center justify-between border border-border p-3"
             >
               <div className="flex items-center gap-3">
-                <IconComponent className={`h-4 w-4 ${
-                  info.state === "connected"
-                    ? "text-success"
-                    : info.state === "fatal"
-                      ? "text-destructive"
-                      : "text-warning"
-                }`} />
+                <div className="flex items-center justify-center h-8 w-8 rounded-md bg-muted/50 shrink-0">
+                  <PlatformIcon className="h-4 w-4 text-foreground" />
+                </div>
 
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium capitalize">{name}</span>
-
-                  {info.error_message && (
-                    <span className="text-xs text-destructive">{info.error_message}</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium capitalize">{name}</span>
+                    <StateIcon className={`h-3 w-3 ${
+                      info.state === "connected"
+                        ? "text-success"
+                        : info.state === "fatal"
+                          ? "text-destructive"
+                          : "text-warning"
+                    }`} />
+                  </div>
 
                   {info.updated_at && (
                     <span className="text-xs text-muted-foreground">
                       Last update: {isoTimeAgo(info.updated_at)}
                     </span>
+                  )}
+
+                  {info.error_code && (
+                    <div className="text-[10px] text-destructive/80 mt-1">
+                      {info.error_code}: {info.error_message}
+                    </div>
                   )}
                 </div>
               </div>

@@ -490,7 +490,7 @@ export default function EnvPage() {
             Changes are saved to disk immediately. Active sessions pick up new keys automatically.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setShowAdvanced(!showAdvanced)}>
+        <Button variant="ghost" size="sm" onClick={() => setShowAdvanced(!showAdvanced)} title="Show advanced/internal configuration keys">
           {showAdvanced ? "Hide Advanced" : "Show Advanced"}
         </Button>
       </div>

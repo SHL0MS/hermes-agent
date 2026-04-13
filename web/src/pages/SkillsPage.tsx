@@ -1,5 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
 import {
+  Bot,
+  Clock,
+  Globe,
+  MessageCircle,
+  Mic,
+  Monitor,
   Package,
   Search,
   Wrench,
@@ -44,6 +50,24 @@ const CATEGORY_LABELS: Record<string, string> = {
   ux: "UX",
   ui: "UI",
 };
+
+const TOOLSET_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  "hermes-cli": Monitor,
+  browser: Globe,
+  voice: Mic,
+  discord: MessageCircle,
+  cron: Clock,
+  agent: Bot,
+};
+
+function getToolsetIcon(name: string): React.ComponentType<{ className?: string }> {
+  // Try exact match first, then prefix match
+  if (TOOLSET_ICONS[name]) return TOOLSET_ICONS[name];
+  for (const [key, icon] of Object.entries(TOOLSET_ICONS)) {
+    if (name.toLowerCase().includes(key)) return icon;
+  }
+  return Wrench;
+}
 
 function prettyCategory(raw: string | null | undefined): string {
   if (!raw) return "General";
@@ -248,7 +272,7 @@ export default function SkillsPage() {
                 ? "bg-primary text-primary-foreground"
                 : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
             }`}
-            onClick={() => setActiveCategory(null)}
+            onClick={() => { setActiveCategory(null); setCollapsedCategories("all"); }}
           >
             All ({skills.length})
           </button>
@@ -261,9 +285,17 @@ export default function SkillsPage() {
                   ? "bg-primary text-primary-foreground"
                   : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
               }`}
-              onClick={() =>
-                setActiveCategory(activeCategory === key ? null : key)
-              }
+              onClick={() => {
+                if (activeCategory === key) {
+                  setActiveCategory(null);
+                  setCollapsedCategories("all");
+                } else {
+                  setActiveCategory(key);
+                  const allCatKeys = new Set(skills.map(s => s.category || "__none__"));
+                  allCatKeys.delete(key);
+                  setCollapsedCategories(allCatKeys);
+                }
+              }}
             >
               {name}
               <span className="ml-1 opacity-60">{count}</span>
@@ -365,75 +397,76 @@ export default function SkillsPage() {
       </section>
 
       {/* ═══════════════ Toolsets ═══════════════ */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Wrench className="h-4 w-4" />
-          Toolsets ({filteredToolsets.length})
-        </h2>
+      {!activeCategory && (
+        <section className="flex flex-col gap-4">
+          <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <Wrench className="h-4 w-4" />
+            Toolsets ({filteredToolsets.length})
+          </h2>
 
-        {filteredToolsets.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No toolsets match the search.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredToolsets.map((ts) => {
-              // Strip emoji prefix from label for cleaner display
-              const labelText = ts.label.replace(/^[\p{Emoji}\s]+/u, "").trim() || ts.name;
-              const emoji = ts.label.match(/^[\p{Emoji}]+/u)?.[0] || "🔧";
+          {filteredToolsets.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                No toolsets match the search.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredToolsets.map((ts) => {
+                const labelText = ts.label.replace(/^[\p{Emoji}\s]+/u, "").trim() || ts.name;
+                const TsIcon = getToolsetIcon(ts.name);
 
-              return (
-                <Card key={ts.name} className="relative overflow-hidden">
-                  <CardContent className="py-4">
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl shrink-0 leading-none mt-0.5">{emoji}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-sm">{labelText}</span>
-                          <Badge
-                            variant={ts.enabled ? "success" : "outline"}
-                            className="text-[10px]"
-                          >
-                            {ts.enabled ? "active" : "inactive"}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-2">
-                          {ts.description}
-                        </p>
-                        {ts.enabled && !ts.configured && (
-                          <p className="text-[10px] text-amber-300/80 mb-2">
-                            Setup needed
-                          </p>
-                        )}
-                        {ts.tools.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {ts.tools.map((tool) => (
-                              <Badge
-                                key={tool}
-                                variant="secondary"
-                                className="text-[10px] font-mono"
-                              >
-                                {tool}
-                              </Badge>
-                            ))}
+                return (
+                  <Card key={ts.name} className="relative overflow-hidden">
+                    <CardContent className="py-4">
+                      <div className="flex items-start gap-3">
+                        <TsIcon className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-sm">{labelText}</span>
+                            <Badge
+                              variant={ts.enabled ? "success" : "outline"}
+                              className="text-[10px]"
+                            >
+                              {ts.enabled ? "active" : "inactive"}
+                            </Badge>
                           </div>
-                        )}
-                        {ts.tools.length === 0 && (
-                          <span className="text-[10px] text-muted-foreground/60">
-                            {ts.enabled ? `${ts.name} toolset` : "Disabled for CLI"}
-                          </span>
-                        )}
+                          <p className="text-xs text-muted-foreground mb-2">
+                            {ts.description}
+                          </p>
+                          {ts.enabled && !ts.configured && (
+                            <p className="text-[10px] text-amber-300/80 mb-2">
+                              Setup needed
+                            </p>
+                          )}
+                          {ts.tools.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {ts.tools.map((tool) => (
+                                <Badge
+                                  key={tool}
+                                  variant="secondary"
+                                  className="text-[10px] font-mono"
+                                >
+                                  {tool}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          {ts.tools.length === 0 && (
+                            <span className="text-[10px] text-muted-foreground/60">
+                              {ts.enabled ? `${ts.name} toolset` : "Disabled for CLI"}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

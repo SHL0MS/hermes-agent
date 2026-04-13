@@ -48,6 +48,42 @@
   --font-compressed: "RulesCompressed", Arial, sans-serif;
 }
 
+/* ---- Light mode overrides ---- */
+html.light {
+  --color-background: #f5f0e8 !important;
+  --color-foreground: #1a1a1a !important;
+  --color-card: #ebe6dc !important;
+  --color-card-foreground: #1a1a1a !important;
+  --color-primary: #1a1a1a !important;
+  --color-primary-foreground: #f5f0e8 !important;
+  --color-secondary: #e0d9cd !important;
+  --color-secondary-foreground: #1a1a1a !important;
+  --color-muted: #ddd6c8 !important;
+  --color-muted-foreground: #6b6357 !important;
+  --color-accent: #d5cec0 !important;
+  --color-accent-foreground: #1a1a1a !important;
+  --color-border: color-mix(in srgb, #1a1a1a 12%, transparent) !important;
+  --color-input: color-mix(in srgb, #1a1a1a 12%, transparent) !important;
+  --color-ring: #1a1a1a !important;
+  --color-popover: #ebe6dc !important;
+  --color-popover-foreground: #1a1a1a !important;
+  --color-destructive: #dc2626 !important;
+  --color-success: #16a34a !important;
+  --color-warning: #ca8a04 !important;
+}
+
+html.light .noise-overlay {
+  opacity: 0.03;
+  mix-blend-mode: multiply;
+}
+html.light .warm-glow {
+  opacity: 0.08;
+  background: radial-gradient(ellipse at 0% 0%, rgba(180,140,60,0.2) 0%, transparent 60%);
+}
+html.light .blend-lighter {
+  mix-blend-mode: normal;
+}
+
 /* ---- Global body ---- */
 body {
   margin: 0;

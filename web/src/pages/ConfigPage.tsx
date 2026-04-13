@@ -1,16 +1,29 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import {
+  Bot,
+  Brush,
   Code,
   Download,
+  FileText,
   FormInput,
+  Globe,
+  HardDrive,
+  Lock,
+  MessageCircle,
+  Mic,
+  Monitor,
+  Package,
   RotateCcw,
   Save,
   Search,
+  Settings2,
+  Speech,
   Upload,
+  Users,
+  Volume2,
+  Wrench,
   X,
   ChevronRight,
-  Settings2,
-  FileText,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getNestedValue, setNestedValue } from "@/lib/nested";
@@ -26,23 +39,28 @@ import { Badge } from "@/components/ui/badge";
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const CATEGORY_ICONS: Record<string, string> = {
-  general: "⚙️",
-  agent: "🤖",
-  terminal: "💻",
-  display: "🎨",
-  delegation: "👥",
-  memory: "🧠",
-  compression: "📦",
-  security: "🔒",
-  browser: "🌐",
-  voice: "🎙️",
-  tts: "🔊",
-  stt: "👂",
-  logging: "📋",
-  discord: "💬",
-  auxiliary: "🔧",
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  general: Settings2,
+  agent: Bot,
+  terminal: Monitor,
+  display: Brush,
+  delegation: Users,
+  memory: HardDrive,
+  compression: Package,
+  security: Lock,
+  browser: Globe,
+  voice: Mic,
+  tts: Volume2,
+  stt: Speech,
+  logging: FileText,
+  discord: MessageCircle,
+  auxiliary: Wrench,
 };
+
+function CatIcon({ cat, className }: { cat: string; className?: string }) {
+  const Icon = CATEGORY_ICONS[cat] || Wrench;
+  return <Icon className={className || "h-4 w-4 text-muted-foreground"} />;
+}
 
 function prettyCategoryName(cat: string): string {
   if (cat === "tts") return "Text-to-Speech";
@@ -230,7 +248,7 @@ export default function ConfigPage() {
         <div key={key}>
           {showCatBadge && (
             <div className="flex items-center gap-2 pt-4 pb-2 first:pt-0">
-              <span className="text-base">{CATEGORY_ICONS[cat] || "📄"}</span>
+              <CatIcon cat={cat} className="h-4 w-4" />
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {prettyCategoryName(cat)}
               </span>
@@ -384,7 +402,7 @@ export default function ConfigPage() {
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     }`}
                   >
-                    <span className="text-sm leading-none">{CATEGORY_ICONS[cat] || "📄"}</span>
+                    <CatIcon cat={cat} className="h-4 w-4" />
                     <span className="flex-1 truncate">{prettyCategoryName(cat)}</span>
                     <span className={`text-[10px] tabular-nums ${isActive ? "text-primary/60" : "text-muted-foreground/50"}`}>
                       {categoryCounts[cat] || 0}
@@ -430,7 +448,7 @@ export default function ConfigPage() {
                 <CardHeader className="py-3 px-4">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <span className="text-base">{CATEGORY_ICONS[activeCategory] || "📄"}</span>
+                      <CatIcon cat={activeCategory} className="h-4 w-4" />
                       {prettyCategoryName(activeCategory)}
                     </CardTitle>
                     <Badge variant="secondary" className="text-[10px]">

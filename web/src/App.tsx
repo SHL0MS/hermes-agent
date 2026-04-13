@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Package, Settings } from "lucide-react";
+import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Moon, Package, Settings, Sun } from "lucide-react";
 import StatusPage from "@/pages/StatusPage";
 import ConfigPage from "@/pages/ConfigPage";
 import EnvPage from "@/pages/EnvPage";
@@ -36,6 +36,17 @@ const PAGE_COMPONENTS: Record<PageId, React.FC> = {
 export default function App() {
   const [page, setPage] = useState<PageId>("status");
   const [animKey, setAnimKey] = useState(0);
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("hermes-theme") as "dark" | "light") || "dark";
+    }
+    return "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light");
+    localStorage.setItem("hermes-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     setAnimKey((k) => k + 1);
@@ -43,11 +54,23 @@ export default function App() {
 
   const PageComponent = PAGE_COMPONENTS[page];
 
+  const isDemo = typeof window !== "undefined" && (
+    location.hostname.includes("github.io") ||
+    new URLSearchParams(location.search).has("demo")
+  );
+
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* Global grain + warm glow (matches landing page) */}
       <div className="noise-overlay" />
       <div className="warm-glow" />
+
+      {/* Demo banner */}
+      {isDemo && (
+        <div className="relative z-50 bg-warning/90 text-background text-center py-1 font-compressed text-xs tracking-[0.2em] uppercase">
+          Dummy page for testing purposes only
+        </div>
+      )}
 
       {/* ---- Header with grid-border nav ---- */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-sm">
@@ -85,7 +108,15 @@ export default function App() {
           </nav>
 
           {/* Version badge */}
-          <div className="ml-auto flex items-center px-4 text-muted-foreground">
+          <div className="ml-auto flex items-center gap-2 px-4">
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1"
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
             <span className="font-display text-[0.7rem] tracking-[0.15em] uppercase opacity-50">
               Web UI
             </span>
