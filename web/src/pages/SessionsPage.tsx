@@ -17,6 +17,7 @@ import {
 import { api } from "@/lib/api";
 import type { SessionInfo, SessionMessage } from "@/lib/api";
 import { useAPI, mutateCache } from "@/hooks/useAPI";
+import { HoverBg } from "@/nous/ui/hover-bg";
 import { timeAgo } from "@/lib/utils";
 import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
@@ -139,9 +140,10 @@ function SessionRow({
         : "border-border"
     }`}>
       <div
-        className="flex items-center justify-between p-3 cursor-pointer hover:bg-secondary/30 transition-colors"
+        className="group relative flex items-center justify-between p-3 cursor-pointer transition-colors"
         onClick={onToggle}
       >
+        <HoverBg />
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`shrink-0 ${sourceInfo.color}`}>
             <SourceIcon className="h-4 w-4" />

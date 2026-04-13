@@ -12,6 +12,7 @@ import {
 import { api } from "@/lib/api";
 import type { AnalyticsResponse, AnalyticsDailyEntry, AnalyticsModelEntry } from "@/lib/api";
 import { useAPI } from "@/hooks/useAPI";
+import { Grid, Cell } from "@/nous/ui/grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -64,16 +65,14 @@ function SummaryCard({
   title?: string;
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium" title={title}>{label}</CardTitle>
+    <Cell className="flex flex-col gap-1" title={title}>
+      <div className="flex items-center justify-between">
+        <CardTitle className="text-sm font-medium">{label}</CardTitle>
         <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-      </CardContent>
-    </Card>
+      </div>
+      <div className="text-2xl font-bold">{value}</div>
+      {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+    </Cell>
   );
 }
 
@@ -437,7 +436,7 @@ function ModelDonut({ models }: { models: AnalyticsModelEntry[] }) {
   const otherTokens = sorted.slice(5).reduce((s, m) => s + m.input_tokens + m.output_tokens, 0);
 
   const DONUT_COLORS = [
-    "#ffe6cb",   // cream (foreground)
+    "#2dd4bf",   // teal
     "#4ade80",   // emerald
     "#60a5fa",   // blue
     "#f59e0b",   // amber
@@ -662,8 +661,8 @@ export default function AnalyticsPage() {
 
       {data && (
         <>
-          {/* Summary cards — matches hermes's token model */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Summary cards — Grid/Cell from design-language */}
+          <Grid className="border-b border-current/20">
             <SummaryCard
               icon={Hash}
               label="Total Tokens"
@@ -695,7 +694,7 @@ export default function AnalyticsPage() {
               value={String(data.totals.total_sessions)}
               sub={`~${(data.totals.total_sessions / days).toFixed(1)}/day avg`}
             />
-          </div>
+          </Grid>
 
           {/* Activity heatmap */}
           <ActivityHeatmap daily={data.daily} />

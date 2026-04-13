@@ -24,4 +24,5 @@ export { Grid, Cell } from './ui/grid'
 export { Typography, H2, Small } from './ui/typography'
 export type { TypographyProps } from './ui/typography'
 export { HoverBg } from './ui/hover-bg'
-export { Blink } from './ui/blink'
+// Blink is vendored but not re-exported — doesn't fit dense dashboard nav.
+// Available via direct import: import { Blink } from '@/nous/ui/blink'

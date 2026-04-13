@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Moon, Package, Settings, Sun } from "lucide-react";
+import { HoverBg, Small, applyLens, LENS_DARK, LENS_LIGHT } from "@/nous";
 import StatusPage from "@/pages/StatusPage";
 import ConfigPage from "@/pages/ConfigPage";
 import EnvPage from "@/pages/EnvPage";
@@ -44,6 +45,8 @@ export default function App() {
   });
 
   useEffect(() => {
+    // Apply Lens preset + CSS class for Tailwind overrides
+    applyLens(theme === "dark" ? LENS_DARK : LENS_LIGHT);
     document.documentElement.classList.toggle("light", theme === "light");
     localStorage.setItem("hermes-theme", theme);
   }, [theme]);
@@ -54,7 +57,6 @@ export default function App() {
     if (!el) return;
     el.style.opacity = "0";
     el.style.transform = "translateY(3px)";
-    // Force reflow then animate
     void el.offsetHeight;
     el.style.transition = "opacity 120ms ease-out, transform 120ms ease-out";
     el.style.opacity = "1";
@@ -70,7 +72,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      {/* Global grain + warm glow (matches landing page) */}
+      {/* Global grain + warm glow (CSS approximation of design-language overlays) */}
       <div className="noise-overlay" />
       <div className="warm-glow" />
 
@@ -81,34 +83,34 @@ export default function App() {
         </div>
       )}
 
-      {/* ---- Header with grid-border nav ---- */}
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-sm">
-        <div className="mx-auto flex h-12 max-w-[1400px] items-stretch">
+      {/* ---- Header: flex layout with design-language styling ---- */}
+      <header className="sticky top-0 z-40 border-b border-current/20 bg-background/90 backdrop-blur-sm">
+        <div className="mx-auto flex h-12 max-w-[1400px] items-stretch border-l border-current/20">
           {/* Brand */}
-          <div className="flex items-center border-r border-border px-5 shrink-0">
+          <div className="flex items-center border-r border-current/20 px-5 shrink-0">
             <span className="font-collapse text-xl font-bold tracking-wider uppercase blend-lighter">
               Hermes<br className="hidden sm:inline" /><span className="sm:hidden"> </span>Agent
             </span>
           </div>
 
-          {/* Nav grid — Mondwest labels like the landing page nav */}
+          {/* Nav items */}
           <nav className="flex items-stretch overflow-x-auto scrollbar-none">
             {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setPage(id)}
-                className={`group relative inline-flex items-center gap-1.5 border-r border-border px-4 py-2 font-display text-[0.8rem] tracking-[0.12em] uppercase whitespace-nowrap transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                className={`group relative inline-flex items-center border-r border-current/20 px-4 py-2 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   page === id
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-                {/* Hover highlight */}
-                <span className="absolute inset-0 bg-foreground pointer-events-none transition-opacity duration-150 group-hover:opacity-5 opacity-0" />
-                {/* Active indicator — dither bar */}
+                <Small className="flex items-center gap-1.5 whitespace-nowrap">
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </Small>
+                <HoverBg />
                 {page === id && (
                   <span className="absolute bottom-0 left-0 right-0 h-px bg-foreground" />
                 )}
@@ -116,8 +118,8 @@ export default function App() {
             ))}
           </nav>
 
-          {/* Version badge */}
-          <div className="ml-auto flex items-center gap-2 px-4">
+          {/* Theme toggle + label */}
+          <div className="ml-auto flex items-center gap-2 border-r border-current/20 px-4">
             <button
               type="button"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -126,9 +128,7 @@ export default function App() {
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
-            <span className="font-display text-[0.7rem] tracking-[0.15em] uppercase opacity-50">
-              Web UI
-            </span>
+            <Small className="opacity-50">Web UI</Small>
           </div>
         </div>
       </header>
@@ -141,14 +141,10 @@ export default function App() {
       </main>
 
       {/* ---- Footer ---- */}
-      <footer className="relative z-2 border-t border-border">
+      <footer className="relative z-2 border-t border-current/20">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3">
-          <span className="font-display text-[0.8rem] tracking-[0.12em] uppercase opacity-50">
-            Hermes Agent
-          </span>
-          <span className="font-display text-[0.7rem] tracking-[0.15em] uppercase text-foreground/40">
-            Nous Research
-          </span>
+          <Small className="opacity-50">Hermes Agent</Small>
+          <Small className="text-foreground/40">Nous Research</Small>
         </div>
       </footer>
     </div>

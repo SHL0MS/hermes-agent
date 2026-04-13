@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Grid, Cell } from "@/nous/ui/grid";
 import {
   Activity,
   AlertTriangle,
@@ -198,27 +199,23 @@ export default function StatusPage() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Grid className="border-b border-current/20">
         {items.map(({ icon: Icon, label, value, badgeText, badgeVariant, title }) => (
-          <Card key={label}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium" title={title}>{label}</CardTitle>
+          <Cell key={label} className="flex flex-col gap-2" title={title}>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium">{label}</CardTitle>
               <Icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-
-            <CardContent>
-              <div className="text-2xl font-bold font-display">{value}</div>
-
-              <Badge variant={badgeVariant} className="mt-2">
-                {badgeVariant === "success" && (
-                  <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-                )}
-                {badgeText}
-              </Badge>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="text-2xl font-bold font-display">{value}</div>
+            <Badge variant={badgeVariant}>
+              {badgeVariant === "success" && (
+                <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+              )}
+              {badgeText}
+            </Badge>
+          </Cell>
         ))}
-      </div>
+      </Grid>
 
       {status.gateway_running && (
         <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
