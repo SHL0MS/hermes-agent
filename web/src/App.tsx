@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Moon, Package, Settings, Sun } from "lucide-react";
 import StatusPage from "@/pages/StatusPage";
 import ConfigPage from "@/pages/ConfigPage";
@@ -35,7 +35,7 @@ const PAGE_COMPONENTS: Record<PageId, React.FC> = {
 
 export default function App() {
   const [page, setPage] = useState<PageId>("status");
-  const [animKey, setAnimKey] = useState(0);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("hermes-theme") as "dark" | "light") || "dark";
@@ -48,8 +48,17 @@ export default function App() {
     localStorage.setItem("hermes-theme", theme);
   }, [theme]);
 
+  // Subtle fade on page change without remounting (no key change)
   useEffect(() => {
-    setAnimKey((k) => k + 1);
+    const el = mainRef.current;
+    if (!el) return;
+    el.style.opacity = "0";
+    el.style.transform = "translateY(3px)";
+    // Force reflow then animate
+    void el.offsetHeight;
+    el.style.transition = "opacity 120ms ease-out, transform 120ms ease-out";
+    el.style.opacity = "1";
+    el.style.transform = "translateY(0)";
   }, [page]);
 
   const PageComponent = PAGE_COMPONENTS[page];
@@ -125,9 +134,8 @@ export default function App() {
       </header>
 
       <main
-        key={animKey}
+        ref={mainRef}
         className="relative z-2 mx-auto w-full max-w-[1400px] flex-1 px-6 py-8"
-        style={{ animation: "fade-in 150ms ease-out" }}
       >
         <PageComponent />
       </main>

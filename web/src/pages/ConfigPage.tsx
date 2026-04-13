@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getNestedValue, setNestedValue } from "@/lib/nested";
+import { useAPI } from "@/hooks/useAPI";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
 import { AutoField } from "@/components/AutoField";
@@ -72,11 +73,22 @@ function prettyCategoryName(cat: string): string {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+type SchemaResp = { fields: Record<string, Record<string, unknown>>; category_order: string[] };
+
 export default function ConfigPage() {
+  const { data: cachedConfig } = useAPI<Record<string, unknown>>("config", api.getConfig);
+  const { data: schemaResp } = useAPI<SchemaResp>("config-schema", api.getSchema as () => Promise<SchemaResp>);
+  const { data: defaults } = useAPI<Record<string, unknown>>("config-defaults", api.getDefaults);
+
+  const schema = schemaResp?.fields ?? null;
+  const categoryOrder = schemaResp?.category_order ?? [];
+
+  // Local config state: initialize from cache, then user edits locally
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
-  const [schema, setSchema] = useState<Record<string, Record<string, unknown>> | null>(null);
-  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
-  const [defaults, setDefaults] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (cachedConfig && !config) setConfig(structuredClone(cachedConfig));
+  }, [cachedConfig]);
+
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [yamlMode, setYamlMode] = useState(false);
@@ -86,18 +98,6 @@ export default function ConfigPage() {
   const [activeCategory, setActiveCategory] = useState<string>("");
   const { toast, showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    api.getConfig().then(setConfig).catch(() => {});
-    api
-      .getSchema()
-      .then((resp) => {
-        setSchema(resp.fields as Record<string, Record<string, unknown>>);
-        setCategoryOrder(resp.category_order ?? []);
-      })
-      .catch(() => {});
-    api.getDefaults().then(setDefaults).catch(() => {});
-  }, []);
 
   // Set active category when categories load
   useEffect(() => {

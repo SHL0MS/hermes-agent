@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   Eye,
   EyeOff,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { EnvVarInfo } from "@/lib/api";
+import { useAPI, mutateCache } from "@/hooks/useAPI";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -350,16 +351,14 @@ function ProviderGroupCard({
 /* ------------------------------------------------------------------ */
 
 export default function EnvPage() {
-  const [vars, setVars] = useState<Record<string, EnvVarInfo> | null>(null);
+  const { data: cachedVars } = useAPI<Record<string, EnvVarInfo>>("env-vars", api.getEnvVars);
+  const [localVars, setLocalVars] = useState<Record<string, EnvVarInfo> | null>(null);
+  const vars = localVars ?? cachedVars;
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(true); // Show all providers by default
   const { toast, showToast } = useToast();
-
-  useEffect(() => {
-    api.getEnvVars().then(setVars).catch(() => {});
-  }, []);
 
   const handleSave = async (key: string) => {
     const value = edits[key];
@@ -367,14 +366,12 @@ export default function EnvPage() {
     setSaving(key);
     try {
       await api.setEnvVar(key, value);
-      setVars((prev) =>
+      const update = (prev: Record<string, EnvVarInfo> | null) =>
         prev
-          ? {
-              ...prev,
-              [key]: { ...prev[key], is_set: true, redacted_value: value.slice(0, 4) + "..." + value.slice(-4) },
-            }
-          : prev,
-      );
+          ? { ...prev, [key]: { ...prev[key], is_set: true, redacted_value: value.slice(0, 4) + "..." + value.slice(-4) } }
+          : prev;
+      mutateCache<Record<string, EnvVarInfo>>("env-vars", (p) => update(p) ?? {});
+      setLocalVars(update(vars));
       setEdits((prev) => { const n = { ...prev }; delete n[key]; return n; });
       setRevealed((prev) => { const n = { ...prev }; delete n[key]; return n; });
       showToast(`${key} saved`, "success");
@@ -389,11 +386,12 @@ export default function EnvPage() {
     setSaving(key);
     try {
       await api.deleteEnvVar(key);
-      setVars((prev) =>
+      const update = (prev: Record<string, EnvVarInfo> | null) =>
         prev
           ? { ...prev, [key]: { ...prev[key], is_set: false, redacted_value: null } }
-          : prev,
-      );
+          : prev;
+      mutateCache<Record<string, EnvVarInfo>>("env-vars", (p) => update(p) ?? {});
+      setLocalVars(update(vars));
       setEdits((prev) => { const n = { ...prev }; delete n[key]; return n; });
       setRevealed((prev) => { const n = { ...prev }; delete n[key]; return n; });
       showToast(`${key} removed`, "success");

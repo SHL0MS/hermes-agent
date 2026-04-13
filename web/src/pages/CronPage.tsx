@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Clock, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import type { CronJob } from "@/lib/api";
+import { useAPI } from "@/hooks/useAPI";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,8 +25,8 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "destructive"> = {
 };
 
 export default function CronPage() {
-  const [jobs, setJobs] = useState<CronJob[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: jobsData, isLoading: loading, refresh: loadJobs } = useAPI<CronJob[]>("cron-jobs", api.getCronJobs);
+  const jobs = jobsData ?? [];
   const { toast, showToast } = useToast();
 
   // New job form state
@@ -34,18 +35,6 @@ export default function CronPage() {
   const [name, setName] = useState("");
   const [deliver, setDeliver] = useState("local");
   const [creating, setCreating] = useState(false);
-
-  const loadJobs = () => {
-    api
-      .getCronJobs()
-      .then(setJobs)
-      .catch(() => showToast("Failed to load cron jobs", "error"))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadJobs();
-  }, []);
 
   const handleCreate = async () => {
     if (!prompt.trim() || !schedule.trim()) {

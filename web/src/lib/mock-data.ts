@@ -59,7 +59,7 @@ export const mockStatus: StatusResponse = {
   },
   config_path: "/home/user/.config/hermes/config.yaml",
   env_path: "/home/user/.config/hermes/.env",
-  config_version: 16,
+  config_version: 15,
   latest_config_version: 16,
   hermes_home: "/home/user/.config/hermes",
 };

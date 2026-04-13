@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   Bot,
   Clock,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SkillInfo, ToolsetInfo } from "@/lib/api";
+import { useAPI, mutateCache } from "@/hooks/useAPI";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,9 +86,12 @@ function prettyCategory(raw: string | null | undefined): string {
 /* ------------------------------------------------------------------ */
 
 export default function SkillsPage() {
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [toolsets, setToolsets] = useState<ToolsetInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: skillsData, isLoading: skillsLoading } = useAPI<SkillInfo[]>("skills", api.getSkills);
+  const { data: toolsetsData, isLoading: toolsetsLoading } = useAPI<ToolsetInfo[]>("toolsets", api.getToolsets);
+  const skills = skillsData ?? [];
+  const [localSkills, setLocalSkills] = useState<SkillInfo[] | null>(null);
+  const toolsets = toolsetsData ?? [];
+  const loading = skillsLoading || toolsetsLoading;
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [togglingSkills, setTogglingSkills] = useState<Set<string>>(new Set());
@@ -95,26 +99,20 @@ export default function SkillsPage() {
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string> | "all">("all");
   const { toast, showToast } = useToast();
 
-  useEffect(() => {
-    Promise.all([api.getSkills(), api.getToolsets()])
-      .then(([s, t]) => {
-        setSkills(s);
-        setToolsets(t);
-      })
-      .catch(() => showToast("Failed to load skills/toolsets", "error"))
-      .finally(() => setLoading(false));
-  }, []);
+  // Use local overrides after toggle, fall back to cache
+  const effectiveSkills = localSkills ?? skills;
 
   /* ---- Toggle skill ---- */
   const handleToggleSkill = async (skill: SkillInfo) => {
     setTogglingSkills((prev) => new Set(prev).add(skill.name));
     try {
       await api.toggleSkill(skill.name, !skill.enabled);
-      setSkills((prev) =>
-        prev.map((s) =>
+      const updater = (prev: SkillInfo[] | null) =>
+        (prev ?? []).map((s) =>
           s.name === skill.name ? { ...s, enabled: !s.enabled } : s
-        )
-      );
+        );
+      mutateCache<SkillInfo[]>("skills", updater);
+      setLocalSkills(updater(effectiveSkills));
       showToast(
         `${skill.name} ${skill.enabled ? "disabled" : "enabled"}`,
         "success"
@@ -134,7 +132,7 @@ export default function SkillsPage() {
   const lowerSearch = search.toLowerCase();
 
   const filteredSkills = useMemo(() => {
-    return skills.filter((s) => {
+    return effectiveSkills.filter((s) => {
       const matchesSearch =
         !search ||
         s.name.toLowerCase().includes(lowerSearch) ||
@@ -145,7 +143,7 @@ export default function SkillsPage() {
         (activeCategory === "__none__" ? !s.category : s.category === activeCategory);
       return matchesSearch && matchesCategory;
     });
-  }, [skills, search, lowerSearch, activeCategory]);
+  }, [effectiveSkills, search, lowerSearch, activeCategory]);
 
   const categoryGroups: CategoryGroup[] = useMemo(() => {
     const map = new Map<string, SkillInfo[]>();
@@ -170,7 +168,7 @@ export default function SkillsPage() {
 
   const allCategories = useMemo(() => {
     const cats = new Map<string, number>();
-    for (const s of skills) {
+    for (const s of effectiveSkills) {
       const key = s.category || "__none__";
       cats.set(key, (cats.get(key) || 0) + 1);
     }
@@ -181,9 +179,9 @@ export default function SkillsPage() {
         return a[0].localeCompare(b[0]);
       })
       .map(([key, count]) => ({ key, name: prettyCategory(key === "__none__" ? null : key), count }));
-  }, [skills]);
+  }, [effectiveSkills]);
 
-  const enabledCount = skills.filter((s) => s.enabled).length;
+  const enabledCount = effectiveSkills.filter((s) => s.enabled).length;
 
   const filteredToolsets = useMemo(() => {
     return toolsets.filter(
@@ -234,7 +232,7 @@ export default function SkillsPage() {
           <Package className="h-5 w-5 text-muted-foreground" />
           <h1 className="text-base font-semibold">Skills</h1>
           <span className="text-xs text-muted-foreground">
-            {enabledCount}/{skills.length} enabled
+            {enabledCount}/{effectiveSkills.length} enabled
           </span>
         </div>
       </div>
@@ -274,7 +272,7 @@ export default function SkillsPage() {
             }`}
             onClick={() => { setActiveCategory(null); setCollapsedCategories("all"); }}
           >
-            All ({skills.length})
+            All ({effectiveSkills.length})
           </button>
           {allCategories.map(({ key, name, count }) => (
             <button
@@ -291,7 +289,7 @@ export default function SkillsPage() {
                   setCollapsedCategories("all");
                 } else {
                   setActiveCategory(key);
-                  const allCatKeys = new Set(skills.map(s => s.category || "__none__"));
+                  const allCatKeys = new Set(effectiveSkills.map(s => s.category || "__none__"));
                   allCatKeys.delete(key);
                   setCollapsedCategories(allCatKeys);
                 }
@@ -310,7 +308,7 @@ export default function SkillsPage() {
         {filteredSkills.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-sm text-muted-foreground">
-              {skills.length === 0
+              {effectiveSkills.length === 0
                 ? "No skills found. Skills are loaded from ~/.hermes/skills/"
                 : "No skills match your search or filter."}
             </CardContent>

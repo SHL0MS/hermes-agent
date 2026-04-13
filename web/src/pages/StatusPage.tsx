@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowUpCircle,
   Calendar,
+  Check,
   Clock,
-  Clock as ClockIcon,
+  Copy,
   Cpu,
   Database,
   FolderOpen,
@@ -21,6 +23,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PlatformStatus, SessionInfo, StatusResponse } from "@/lib/api";
+import { useAPI } from "@/hooks/useAPI";
 import { timeAgo, isoTimeAgo } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,18 +64,18 @@ function gatewayBadge(status: StatusResponse) {
 }
 
 export default function StatusPage() {
-  const [status, setStatus] = useState<StatusResponse | null>(null);
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-
-  useEffect(() => {
-    const load = () => {
-      api.getStatus().then(setStatus).catch(() => {});
-      api.getSessions().then(setSessions).catch(() => {});
-    };
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const [migrateCopied, setMigrateCopied] = useState(false);
+  const { data: status } = useAPI<StatusResponse>(
+    "status",
+    api.getStatus,
+    { pollMs: 5000, staleMs: 3000 },
+  );
+  const { data: sessionsData } = useAPI<SessionInfo[]>(
+    "sessions",
+    api.getSessions,
+    { pollMs: 5000, staleMs: 3000 },
+  );
+  const sessions = sessionsData ?? [];
 
   if (!status) {
     return (
@@ -112,7 +115,7 @@ export default function StatusPage() {
       icon: Shield,
       label: "Config Version",
       value: `v${status.config_version}`,
-      badgeText: configNeedsMigration ? "Migrate" : "Current",
+      badgeText: configNeedsMigration ? "Outdated" : "Current",
       badgeVariant: (configNeedsMigration ? "warning" : "success") as "warning" | "success",
       title: "Internal version number. Bump indicates schema changes.",
     },
@@ -137,9 +140,7 @@ export default function StatusPage() {
       detail: info.error_message ?? undefined,
     });
   }
-  if (configNeedsMigration) {
-    alerts.push({ message: `Config v${status.config_version} is outdated — v${status.latest_config_version} available` });
-  }
+  // Config migration is advisory, not critical — handled separately below
 
   return (
     <div className="flex flex-col gap-6">
@@ -157,6 +158,41 @@ export default function StatusPage() {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Config migration advisory */}
+      {configNeedsMigration && (
+        <div className="border border-warning/30 bg-warning/[0.06] p-4">
+          <div className="flex items-start gap-3">
+            <ArrowUpCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-warning">
+                Config v{status.config_version} is outdated — v{status.latest_config_version} available
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Run the migration command in your terminal to update:
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <code className="text-xs bg-muted/50 px-2.5 py-1 font-mono-ui text-foreground">
+                  hermes config migrate
+                </code>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  onClick={() => {
+                    navigator.clipboard.writeText("hermes config migrate").then(() => {
+                      setMigrateCopied(true);
+                      setTimeout(() => setMigrateCopied(false), 2000);
+                    });
+                  }}
+                >
+                  {migrateCopied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+                  {migrateCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -213,7 +249,7 @@ export default function StatusPage() {
               { label: "Config Path", value: status.config_path, icon: FolderOpen },
               { label: "Env Path", value: status.env_path, icon: FolderOpen },
               { label: "Release Date", value: status.release_date, icon: Calendar },
-              { label: "Total Sessions", value: `${sessions.length} sessions`, icon: ClockIcon },
+              { label: "Total Sessions", value: `${sessions.length} sessions`, icon: Clock },
             ].map(({ label, value, icon: InfoIcon }) => (
               <div key={label} className="flex items-start gap-2">
                 <InfoIcon className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />

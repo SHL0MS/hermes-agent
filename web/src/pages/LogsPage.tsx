@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, FileText, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import type { LogsResponse } from "@/lib/api";
+import { useAPI } from "@/hooks/useAPI";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,41 +66,25 @@ export default function LogsPage() {
   const [component, setComponent] = useState<(typeof COMPONENTS)[number]>("all");
   const [lineCount, setLineCount] = useState<(typeof LINE_COUNTS)[number]>(100);
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [lines, setLines] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [logsCopied, setLogsCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const fetchLogs = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    api
-      .getLogs({ file, lines: lineCount, level, component })
-      .then((resp) => {
-        setLines(resp.lines);
-        // Auto-scroll to bottom
-        setTimeout(() => {
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-          }
-        }, 50);
-      })
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
-  }, [file, lineCount, level, component]);
+  const cacheKey = `logs-${file}-${lineCount}-${level}-${component}`;
+  const { data: logsData, error, isLoading: loading, refresh } = useAPI<LogsResponse>(
+    cacheKey,
+    () => api.getLogs({ file, lines: lineCount, level, component }),
+    { pollMs: autoRefresh ? 5000 : undefined },
+  );
+  const lines = logsData?.lines ?? [];
 
-  // Initial load + refetch on filter change
+  // Auto-scroll when new data arrives
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
-
-  // Auto-refresh polling
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(fetchLogs, 5000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchLogs]);
+    if (logsData && scrollRef.current) {
+      setTimeout(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }, 50);
+    }
+  }, [logsData]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -136,7 +122,7 @@ export default function LogsPage() {
                 {logsCopied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
                 {logsCopied ? "Copied" : "Copy"}
               </Button>
-              <Button variant="outline" size="sm" onClick={fetchLogs} className="text-xs h-7">
+              <Button variant="outline" size="sm" onClick={refresh} className="text-xs h-7">
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Refresh
               </Button>
@@ -173,8 +159,9 @@ export default function LogsPage() {
             {lines.map((line, i) => {
               const cls = classifyLine(line);
               return (
-                <div key={i} className={`${LINE_COLORS[cls]} hover:bg-secondary/20 px-1 -mx-1 rounded`}>
-                  {line}
+                <div key={i} className={`${LINE_COLORS[cls]} hover:bg-secondary/20 px-1 -mx-1 flex gap-0`}>
+                  <span className="inline-block w-10 shrink-0 text-right pr-3 select-none text-muted-foreground/30 tabular-nums">{i + 1}</span>
+                  <span className="flex-1 min-w-0">{line}</span>
                 </div>
               );
             })}

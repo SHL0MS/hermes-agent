@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import {
   BarChart3,
   Coins,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { AnalyticsResponse, AnalyticsDailyEntry, AnalyticsModelEntry } from "@/lib/api";
+import { useAPI } from "@/hooks/useAPI";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -116,7 +117,7 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
               >
                 {/* Tooltip */}
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 pointer-events-none">
-                  <div className="rounded-md bg-card border border-border px-2.5 py-1.5 text-[10px] text-foreground shadow-lg whitespace-nowrap">
+                  <div className="bg-card border border-border px-2.5 py-1.5 text-[10px] text-foreground shadow-lg whitespace-nowrap">
                     <div className="font-medium">{formatDate(d.day)}</div>
                     <div>Input: {formatTokens(d.input_tokens)}</div>
                     <div>Output: {formatTokens(d.output_tokens)}</div>
@@ -265,19 +266,39 @@ function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
 function ActivityHeatmap({ daily }: { daily: AnalyticsDailyEntry[] }) {
   if (daily.length === 0) return null;
 
-  // Build a map of day -> sessions
   const dayMap = new Map(daily.map((d) => [d.day, d]));
   const maxSessions = Math.max(...daily.map((d) => d.sessions), 1);
 
-  // Generate all days in range
+  // Pad range so it starts on a Sunday and ends on a Saturday (complete weeks)
   const startDate = new Date(daily[0].day + "T00:00:00");
   const endDate = new Date(daily[daily.length - 1].day + "T00:00:00");
-  const allDays: string[] = [];
+  // Roll start back to Sunday
+  while (startDate.getDay() !== 0) startDate.setDate(startDate.getDate() - 1);
+  // Roll end forward to Saturday
+  while (endDate.getDay() !== 6) endDate.setDate(endDate.getDate() + 1);
+
+  // Build weeks (columns) × 7 days (rows)
+  type CellData = { day: string; sessions: number; cost: number; inRange: boolean };
+  const weeks: CellData[][] = [];
+  let currentWeek: CellData[] = [];
+  const firstDataDay = daily[0].day;
+  const lastDataDay = daily[daily.length - 1].day;
+
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    allDays.push(d.toISOString().slice(0, 10));
+    const iso = d.toISOString().slice(0, 10);
+    const entry = dayMap.get(iso);
+    currentWeek.push({
+      day: iso,
+      sessions: entry?.sessions ?? 0,
+      cost: entry ? bestCost(entry) : 0,
+      inRange: iso >= firstDataDay && iso <= lastDataDay,
+    });
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
   }
 
-  // Intensity levels (0-4)
   function intensity(sessions: number): number {
     if (sessions === 0) return 0;
     const ratio = sessions / maxSessions;
@@ -287,14 +308,47 @@ function ActivityHeatmap({ daily }: { daily: AnalyticsDailyEntry[] }) {
     return 4;
   }
 
-  // Colors matching theme
-  const COLORS = [
-    "bg-border",           // 0: no activity
-    "bg-emerald-900/60",   // 1: low
-    "bg-emerald-700/70",   // 2: medium
-    "bg-emerald-500/80",   // 3: high
-    "bg-emerald-400",      // 4: max
+  // Uses CSS custom properties so they adapt to light/dark mode
+  const HEATMAP_STYLES: React.CSSProperties[] = [
+    { backgroundColor: "var(--heatmap-0)" },
+    { backgroundColor: "var(--heatmap-1)" },
+    { backgroundColor: "var(--heatmap-2)" },
+    { backgroundColor: "var(--heatmap-3)" },
+    { backgroundColor: "var(--heatmap-4)" },
   ];
+
+  const DAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
+
+  // Month labels: show at first week that starts in a new month
+  const monthLabels: { col: number; label: string }[] = [];
+  let lastMonth = -1;
+  weeks.forEach((week, i) => {
+    // Use the first day of the week that's in the data range, or first day
+    const refDay = week.find((c) => c.inRange) ?? week[0];
+    const m = new Date(refDay.day + "T00:00:00").getMonth();
+    if (m !== lastMonth) {
+      monthLabels.push({
+        col: i,
+        label: new Date(refDay.day + "T00:00:00").toLocaleDateString(undefined, { month: "short" }),
+      });
+      lastMonth = m;
+    }
+  });
+
+  const CELL = 11;
+  const GAP = 4;
+  const COL_W = CELL + GAP;
+  const LABEL_W = 30;
+
+  // Filter month labels so they don't overlap (~28px per label at 10px font)
+  const MIN_PX_SPACING = 30;
+  const spacedLabels: typeof monthLabels = [];
+  for (const ml of monthLabels) {
+    const prev = spacedLabels[spacedLabels.length - 1];
+    if (!prev || (ml.col - prev.col) * COL_W >= MIN_PX_SPACING) {
+      spacedLabels.push(ml);
+    }
+  }
 
   return (
     <Card>
@@ -306,28 +360,65 @@ function ActivityHeatmap({ daily }: { daily: AnalyticsDailyEntry[] }) {
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <span>Less</span>
-            {COLORS.map((c, i) => (
-              <div key={i} className={`h-2.5 w-2.5 ${c}`} />
+            {HEATMAP_STYLES.map((style, i) => (
+              <div key={i} className="h-2.5 w-2.5" style={style} />
             ))}
             <span>More</span>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-wrap gap-[3px]">
-          {allDays.map((day) => {
-            const entry = dayMap.get(day);
-            const sessions = entry?.sessions ?? 0;
-            const level = intensity(sessions);
-            const cost = entry ? bestCost(entry) : 0;
-            return (
-              <div
-                key={day}
-                className={`h-3 w-3 ${COLORS[level]} transition-colors`}
-                title={`${formatDate(day)}: ${sessions} session${sessions !== 1 ? "s" : ""}${cost > 0 ? `, ${formatCost(cost)}` : ""}`}
-              />
-            );
-          })}
+        <div className="overflow-x-auto">
+          {/* Month labels row — positioned by column offset */}
+          <div className="relative mb-1.5" style={{ height: 14, marginLeft: LABEL_W }}>
+            {spacedLabels.map((ml) => (
+              <span
+                key={ml.col}
+                className="absolute text-[10px] text-muted-foreground"
+                style={{ left: ml.col * COL_W }}
+              >
+                {ml.label}
+              </span>
+            ))}
+          </div>
+
+          {/* Grid: day labels + cells */}
+          <div className="flex">
+            {/* Day-of-week labels */}
+            <div className="flex flex-col shrink-0" style={{ width: LABEL_W }}>
+              {DAY_LABELS.map((label, i) => (
+                <div
+                  key={i}
+                  className="text-[10px] text-muted-foreground flex items-center"
+                  style={{ height: CELL + GAP }}
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
+
+            {/* Week columns */}
+            <div className="flex" style={{ gap: GAP }}>
+              {weeks.map((week, wi) => (
+                <div key={wi} className="flex flex-col" style={{ gap: GAP }}>
+                  {week.map((cell) => {
+                    const level = cell.inRange ? intensity(cell.sessions) : 0;
+                    return (
+                      <div
+                        key={cell.day}
+                        className={`transition-colors ${!cell.inRange ? "opacity-30" : ""}`}
+                        style={{ width: CELL, height: CELL, ...HEATMAP_STYLES[level] }}
+                        title={cell.inRange
+                          ? `${formatDate(cell.day)}: ${cell.sessions} session${cell.sessions !== 1 ? "s" : ""}${cell.cost > 0 ? `, ${formatCost(cell.cost)}` : ""}`
+                          : formatDate(cell.day)
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -354,26 +445,32 @@ function ModelDonut({ models }: { models: AnalyticsModelEntry[] }) {
     "#6b7280",   // gray (other)
   ];
 
-  const segments: { label: string; tokens: number; pct: number; color: string }[] = top.map((m, i) => ({
-    label: m.model.split("/").pop() ?? m.model,
-    tokens: m.input_tokens + m.output_tokens,
-    pct: Math.round(((m.input_tokens + m.output_tokens) / totalTokens) * 100),
-    color: DONUT_COLORS[i],
-  }));
+  const segments: { label: string; tokens: number; pct: number; exactPct: number; color: string }[] = top.map((m, i) => {
+    const tokens = m.input_tokens + m.output_tokens;
+    return {
+      label: m.model.split("/").pop() ?? m.model,
+      tokens,
+      pct: Math.round((tokens / totalTokens) * 100),
+      exactPct: (tokens / totalTokens) * 100,
+      color: DONUT_COLORS[i],
+    };
+  });
   if (otherTokens > 0) {
     segments.push({
       label: "Other",
       tokens: otherTokens,
       pct: Math.round((otherTokens / totalTokens) * 100),
+      exactPct: (otherTokens / totalTokens) * 100,
       color: DONUT_COLORS[5],
     });
   }
 
-  // Build conic-gradient stops
+  // Build conic-gradient stops using exact percentages to avoid gaps
   let cumPct = 0;
-  const stops = segments.map((s) => {
+  const stops = segments.map((s, i) => {
     const start = cumPct;
-    cumPct += s.pct;
+    // Last segment always extends to 100% to avoid rounding gaps
+    cumPct = i === segments.length - 1 ? 100 : cumPct + s.exactPct;
     return `${s.color} ${start}% ${cumPct}%`;
   }).join(", ");
 
@@ -413,6 +510,8 @@ function ModelDonut({ models }: { models: AnalyticsModelEntry[] }) {
 }
 
 function CostTrend({ daily }: { daily: AnalyticsDailyEntry[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
   if (daily.length < 2) return null;
 
   const costs = daily.map((d) => bestCost(d));
@@ -421,19 +520,21 @@ function CostTrend({ daily }: { daily: AnalyticsDailyEntry[] }) {
   if (totalCost === 0) return null;
 
   const W = 600;
-  const H = 100;
-  const PAD = 4;
+  const H = 120;
+  const PAD_X = 4;
+  const PAD_TOP = 16;
+  const PAD_BOTTOM = 4;
 
-  const points = costs.map((c, i) => {
-    const x = PAD + (i / (costs.length - 1)) * (W - 2 * PAD);
-    const y = H - PAD - (c / maxCost) * (H - 2 * PAD);
-    return `${x},${y}`;
-  });
+  const pointCoords = costs.map((c, i) => ({
+    x: PAD_X + (i / (costs.length - 1)) * (W - 2 * PAD_X),
+    y: H - PAD_BOTTOM - (c / maxCost) * (H - PAD_TOP - PAD_BOTTOM),
+  }));
 
+  const linePoints = pointCoords.map((p) => `${p.x},${p.y}`).join(" ");
   const areaPoints = [
-    `${PAD},${H - PAD}`,
-    ...points,
-    `${W - PAD},${H - PAD}`,
+    `${PAD_X},${H - PAD_BOTTOM}`,
+    ...pointCoords.map((p) => `${p.x},${p.y}`),
+    `${W - PAD_X},${H - PAD_BOTTOM}`,
   ].join(" ");
 
   return (
@@ -450,21 +551,69 @@ function CostTrend({ daily }: { daily: AnalyticsDailyEntry[] }) {
         </div>
       </CardHeader>
       <CardContent>
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-24" preserveAspectRatio="none">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full h-28"
+          preserveAspectRatio="none"
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           {/* Area fill */}
           <polygon points={areaPoints} className="fill-emerald-500/15" />
           {/* Line */}
           <polyline
-            points={points.join(" ")}
+            points={linePoints}
             fill="none"
             className="stroke-emerald-500"
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
           />
+          {/* Hover crosshair */}
+          {hoverIdx !== null && (
+            <>
+              <line
+                x1={pointCoords[hoverIdx].x}
+                y1={PAD_TOP}
+                x2={pointCoords[hoverIdx].x}
+                y2={H - PAD_BOTTOM}
+                className="stroke-foreground/20"
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+                strokeDasharray="3 3"
+              />
+              <circle
+                cx={pointCoords[hoverIdx].x}
+                cy={pointCoords[hoverIdx].y}
+                r="4"
+                className="fill-emerald-500 stroke-background"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          )}
+          {/* Invisible hit areas for each data point */}
+          {pointCoords.map((p, i) => (
+            <rect
+              key={i}
+              x={p.x - (W / costs.length) / 2}
+              y={0}
+              width={W / costs.length}
+              height={H}
+              fill="transparent"
+              onMouseEnter={() => setHoverIdx(i)}
+            />
+          ))}
         </svg>
+        {/* Labels + hover tooltip */}
         <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
-          <span>{daily.length > 0 ? formatDate(daily[0].day) : ""}</span>
-          <span>{daily.length > 0 ? formatDate(daily[daily.length - 1].day) : ""}</span>
+          <span>{formatDate(daily[0].day)}</span>
+          {hoverIdx !== null ? (
+            <span className="text-foreground font-medium">
+              {formatDate(daily[hoverIdx].day)}: {formatCost(costs[hoverIdx])}
+            </span>
+          ) : (
+            <span className="text-muted-foreground/40">hover for details</span>
+          )}
+          <span>{formatDate(daily[daily.length - 1].day)}</span>
         </div>
       </CardContent>
     </Card>
@@ -473,23 +622,11 @@ function CostTrend({ daily }: { daily: AnalyticsDailyEntry[] }) {
 
 export default function AnalyticsPage() {
   const [days, setDays] = useState(30);
-  const [data, setData] = useState<AnalyticsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    api
-      .getAnalytics(days)
-      .then(setData)
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
-  }, [days]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { data, error, isLoading: loading } = useAPI<AnalyticsResponse>(
+    `analytics-${days}`,
+    () => api.getAnalytics(days),
+    { staleMs: 60_000 },
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -563,14 +700,14 @@ export default function AnalyticsPage() {
           {/* Activity heatmap */}
           <ActivityHeatmap daily={data.daily} />
 
-          {/* Model distribution + Cost trend side by side */}
+          {/* Model distribution + Daily token usage side by side */}
           <div className="grid gap-4 lg:grid-cols-2">
             <ModelDonut models={data.by_model} />
-            <CostTrend daily={data.daily} />
+            <TokenBarChart daily={data.daily} />
           </div>
 
-          {/* Bar chart */}
-          <TokenBarChart daily={data.daily} />
+          {/* Cost trend (full width line chart) */}
+          <CostTrend daily={data.daily} />
 
           {/* Tables */}
           <DailyTable daily={data.daily} />
