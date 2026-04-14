@@ -205,6 +205,10 @@ export const api = {
     fetchJSON<{ ok: boolean }>(`/api/pair/devices/${encodeURIComponent(deviceId)}`, {
       method: "DELETE",
     }),
+
+  // Chat
+  checkChatStatus: () =>
+    fetchJSON<{ available: boolean; message?: string }>("/api/chat/status"),
 };
 
 export interface PairedDevice {
