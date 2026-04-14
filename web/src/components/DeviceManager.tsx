@@ -11,8 +11,10 @@ export function DeviceManager() {
   const [loading, setLoading] = useState(true);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiry, setPairingExpiry] = useState(0);
+  const [lanUrls, setLanUrls] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
 
@@ -48,6 +50,7 @@ export function DeviceManager() {
       const resp = await api.beginPairing();
       setPairingCode(resp.code);
       setPairingExpiry(resp.expires_in);
+      setLanUrls(resp.lan_urls ?? []);
     } catch (err) {
       // Rate limited or error
     } finally {
@@ -60,6 +63,13 @@ export function DeviceManager() {
     navigator.clipboard.writeText(pairingCode).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const copyUrl = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
     });
   };
 
@@ -109,21 +119,46 @@ export function DeviceManager() {
         </div>
 
         {pairingCode && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Enter this code on your phone to pair it with this dashboard:
-            </p>
-            <div className="flex items-center gap-3">
-              <code className="text-2xl font-mono tracking-[0.4em] font-bold bg-muted/30 px-4 py-2 border border-border">
-                {pairingCode}
-              </code>
-              <button
-                type="button"
-                onClick={copyCode}
-                className="p-2 text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
-              </button>
+          <div className="space-y-3">
+            {/* Step 1: URL */}
+            {lanUrls.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Step 1:</span> Open this URL on your phone:
+                </p>
+                {lanUrls.map((url) => (
+                  <div key={url} className="flex items-center gap-2">
+                    <code className="text-sm font-mono bg-muted/30 px-3 py-1.5 border border-border flex-1 min-w-0 truncate">
+                      {url}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copyUrl(url)}
+                      className="p-1.5 text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                    >
+                      {copiedUrl ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Step 2: Code */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{lanUrls.length > 0 ? "Step 2:" : ""}</span> Enter this pairing code:
+              </p>
+              <div className="flex items-center gap-3">
+                <code className="text-2xl font-mono tracking-[0.4em] font-bold bg-muted/30 px-4 py-2 border border-border">
+                  {pairingCode}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyCode}
+                  className="p-2 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <p className="text-[0.65rem] text-muted-foreground/60">
               Expires in {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}

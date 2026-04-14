@@ -186,7 +186,7 @@ export const api = {
   checkAuth: () =>
     fetchJSON<{ authenticated: boolean; is_localhost: boolean }>("/api/auth/check"),
   beginPairing: () =>
-    fetchJSON<{ code: string; expires_in: number }>("/api/pair/begin", {
+    fetchJSON<{ code: string; expires_in: number; lan_urls?: string[] }>("/api/pair/begin", {
       method: "POST",
     }),
   completePairing: (code: string, deviceName: string) =>

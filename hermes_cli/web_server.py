@@ -332,12 +332,46 @@ class PairCompleteBody(BaseModel):
     device_name: str = "Unknown device"
 
 
+def _get_lan_addresses() -> List[str]:
+    """Return LAN IP addresses for this machine."""
+    import socket
+
+    addrs = []
+    try:
+        # Get all IPv4 addresses
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            addr = info[4][0]
+            if not addr.startswith("127."):
+                addrs.append(addr)
+    except Exception:
+        pass
+    # Fallback: connect to a public IP to find the default route
+    if not addrs:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            addrs.append(s.getsockname()[0])
+            s.close()
+        except Exception:
+            pass
+    return list(dict.fromkeys(addrs))  # dedupe preserving order
+
+
 @app.post("/api/pair/begin")
 async def pair_begin(request: Request):
     """Generate a pairing code. Must be called from an authenticated context."""
     await require_auth(request)
     code = _device_store.generate_code()
-    return {"code": code, "expires_in": _device_store._PENDING_TTL}
+    # Include LAN URLs so the user knows what to open on their phone
+    lan_addrs = _get_lan_addresses()
+    port = 9119  # TODO: make dynamic if port is configurable at runtime
+    lan_urls = [f"http://{addr}:{port}" for addr in lan_addrs]
+    return {
+        "code": code,
+        "expires_in": _device_store._PENDING_TTL,
+        "lan_urls": lan_urls,
+    }
 
 
 @app.post("/api/pair/complete")
