@@ -10,8 +10,10 @@ Usage:
 """
 
 import asyncio
+import hmac
 import json
 import logging
+import os
 import secrets
 import sys
 import threading
@@ -61,13 +63,6 @@ _log = logging.getLogger(__name__)
 
 app = FastAPI(title="Hermes Agent", version=__version__)
 
-# ---------------------------------------------------------------------------
-# Session token for protecting sensitive endpoints (reveal).
-# Generated fresh on every server start — dies when the process exits.
-# Injected into the SPA HTML so only the legitimate web UI can use it.
-# ---------------------------------------------------------------------------
-_SESSION_TOKEN = secrets.token_urlsafe(32)
-
 # Simple rate limiter for the reveal endpoint
 _reveal_timestamps: List[float] = []
 _REVEAL_MAX_PER_WINDOW = 5
@@ -83,6 +78,244 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Authentication — API Server Key + device pairing tokens
+# ---------------------------------------------------------------------------
+#
+# Security model:
+#   - Localhost (127.0.0.1 / ::1): no auth required (bypass)
+#   - Non-localhost: requires Bearer token (API_SERVER_KEY or device token)
+#   - hermes dashboard --host 0.0.0.0: refuses to start without API_SERVER_KEY
+#
+# Device pairing allows mobile access without typing the full API key.
+# Flow: generate 8-char code on desktop → enter on phone → receive device token.
+
+_API_SERVER_KEY: Optional[str] = os.environ.get("API_SERVER_KEY") or None
+
+
+class DeviceStore:
+    """Manage paired device tokens in ~/.hermes/dashboard_devices.json."""
+
+    def __init__(self):
+        self._path = get_hermes_home() / "dashboard_devices.json"
+        self._lock = threading.Lock()
+        self._pending: Dict[
+            str, Dict[str, Any]
+        ] = {}  # code → {device_name, created_at}
+        self._PENDING_TTL = 600  # 10 minutes
+        self._MAX_PENDING = 3
+        self._LOCKOUT_ATTEMPTS = 5
+        self._LOCKOUT_SECONDS = 3600
+        self._failed_attempts: List[float] = []
+
+    def _load(self) -> Dict[str, Dict[str, Any]]:
+        if not self._path.exists():
+            return {}
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save(self, devices: Dict[str, Dict[str, Any]]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(devices, indent=2), encoding="utf-8")
+        try:
+            self._path.chmod(0o600)
+        except OSError:
+            pass
+
+    def validate_token(self, token: str) -> bool:
+        """Check if a bearer token matches any device token or the API key."""
+        if not token:
+            return False
+        with self._lock:
+            devices = self._load()
+            for dev_id, dev in devices.items():
+                stored = dev.get("token", "")
+                if stored and hmac.compare_digest(token, stored):
+                    # Update last_used timestamp
+                    dev["last_used"] = time.time()
+                    self._save(devices)
+                    return True
+        return False
+
+    def generate_code(self) -> str:
+        """Generate a pairing code. Returns the 8-char code."""
+        # Rate limit / lockout check
+        now = time.time()
+        self._failed_attempts = [
+            t for t in self._failed_attempts if now - t < self._LOCKOUT_SECONDS
+        ]
+        if len(self._failed_attempts) >= self._LOCKOUT_ATTEMPTS:
+            raise HTTPException(
+                status_code=429, detail="Too many failed attempts. Try again later."
+            )
+
+        # GC expired pending codes
+        cutoff = now - self._PENDING_TTL
+        self._pending = {
+            k: v for k, v in self._pending.items() if v["created_at"] > cutoff
+        }
+
+        if len(self._pending) >= self._MAX_PENDING:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many pending pairing codes. Wait for existing codes to expire.",
+            )
+
+        # 8-char code from unambiguous alphabet (matching gateway pairing)
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        code = "".join(secrets.choice(alphabet) for _ in range(8))
+        self._pending[code] = {"created_at": now}
+        return code
+
+    def complete_pairing(
+        self, code: str, device_name: str = "Unknown device"
+    ) -> Optional[str]:
+        """Validate a pairing code and return a device token, or None."""
+        now = time.time()
+        code = code.upper().strip()
+
+        pending = self._pending.get(code)
+        if not pending or (now - pending["created_at"]) > self._PENDING_TTL:
+            self._failed_attempts.append(now)
+            self._pending.pop(code, None)
+            return None
+
+        # Valid code — generate device token
+        self._pending.pop(code, None)
+        token = secrets.token_urlsafe(32)
+        dev_id = secrets.token_hex(4)
+
+        with self._lock:
+            devices = self._load()
+            devices[dev_id] = {
+                "token": token,
+                "name": device_name,
+                "created_at": now,
+                "last_used": now,
+            }
+            self._save(devices)
+
+        return token
+
+    def list_devices(self) -> List[Dict[str, Any]]:
+        """List all paired devices (without exposing tokens)."""
+        with self._lock:
+            devices = self._load()
+        return [
+            {
+                "id": dev_id,
+                "name": dev.get("name", "Unknown"),
+                "created_at": dev.get("created_at"),
+                "last_used": dev.get("last_used"),
+            }
+            for dev_id, dev in devices.items()
+        ]
+
+    def revoke_device(self, dev_id: str) -> bool:
+        """Remove a paired device. Returns True if found."""
+        with self._lock:
+            devices = self._load()
+            if dev_id not in devices:
+                return False
+            del devices[dev_id]
+            self._save(devices)
+        return True
+
+    def reset_all(self) -> None:
+        """Clear all paired devices and pending codes."""
+        with self._lock:
+            self._save({})
+        self._pending.clear()
+
+
+_device_store = DeviceStore()
+
+
+def _is_localhost(request: Request) -> bool:
+    """Check if request originates from localhost."""
+    client = request.client
+    if not client:
+        return False
+    return client.host in ("127.0.0.1", "::1", "localhost")
+
+
+async def require_auth(request: Request):
+    """Auth dependency for all /api/* routes.
+
+    Localhost requests bypass auth. Non-localhost requests must provide
+    a valid Bearer token (API_SERVER_KEY or paired device token).
+    """
+    if _is_localhost(request):
+        return
+
+    auth = request.headers.get("authorization", "")
+    token = auth.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Check API server key
+    if _API_SERVER_KEY and hmac.compare_digest(token, _API_SERVER_KEY):
+        return
+
+    # Check device tokens
+    if _device_store.validate_token(token):
+        return
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+# ---------------------------------------------------------------------------
+# Pairing endpoints (unauthenticated by necessity — phone has no token yet)
+# ---------------------------------------------------------------------------
+
+
+class PairCompleteBody(BaseModel):
+    code: str
+    device_name: str = "Unknown device"
+
+
+@app.post("/api/pair/begin")
+async def pair_begin(request: Request):
+    """Generate a pairing code. Must be called from an authenticated context."""
+    await require_auth(request)
+    code = _device_store.generate_code()
+    return {"code": code, "expires_in": _device_store._PENDING_TTL}
+
+
+@app.post("/api/pair/complete")
+async def pair_complete(body: PairCompleteBody):
+    """Submit a pairing code to receive a device token.
+
+    This endpoint is intentionally unauthenticated (the phone doesn't have
+    a token yet). Protected by: rate limiting, lockout, code expiry, and
+    generic error responses that don't confirm the dashboard exists.
+    """
+    token = _device_store.complete_pairing(body.code, body.device_name)
+    if not token:
+        # Generic 401 — don't reveal whether the code was wrong or expired
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {"token": token}
+
+
+@app.get("/api/pair/devices")
+async def list_paired_devices(request: Request):
+    """List all paired devices. Authenticated."""
+    await require_auth(request)
+    return {"devices": _device_store.list_devices()}
+
+
+@app.delete("/api/pair/devices/{device_id}")
+async def revoke_paired_device(device_id: str, request: Request):
+    """Revoke a paired device. Authenticated."""
+    await require_auth(request)
+    if not _device_store.revoke_device(device_id):
+        raise HTTPException(status_code=404, detail="Device not found")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +421,21 @@ _CATEGORY_MERGE: Dict[str, str] = {
 
 # Display order for tabs — unlisted categories sort alphabetically after these.
 _CATEGORY_ORDER = [
-    "general", "agent", "terminal", "display", "delegation",
-    "memory", "compression", "security", "browser", "voice",
-    "tts", "stt", "logging", "discord", "auxiliary",
+    "general",
+    "agent",
+    "terminal",
+    "display",
+    "delegation",
+    "memory",
+    "compression",
+    "security",
+    "browser",
+    "voice",
+    "tts",
+    "stt",
+    "logging",
+    "discord",
+    "auxiliary",
 ]
 
 
@@ -244,7 +489,9 @@ def _build_schema_from_config(
             if full_key in _SCHEMA_OVERRIDES:
                 entry.update(_SCHEMA_OVERRIDES[full_key])
             # Merge small categories
-            entry["category"] = _CATEGORY_MERGE.get(entry["category"], entry["category"])
+            entry["category"] = _CATEGORY_MERGE.get(
+                entry["category"], entry["category"]
+            )
             schema[full_key] = entry
     return schema
 
@@ -315,18 +562,24 @@ async def get_status():
         gateway_exit_reason = runtime.get("exit_reason")
         gateway_updated_at = runtime.get("updated_at")
         if not gateway_running:
-            gateway_state = gateway_state if gateway_state in ("stopped", "startup_failed") else "stopped"
+            gateway_state = (
+                gateway_state
+                if gateway_state in ("stopped", "startup_failed")
+                else "stopped"
+            )
             gateway_platforms = {}
 
     active_sessions = 0
     try:
         from hermes_state import SessionDB
+
         db = SessionDB()
         try:
             sessions = db.list_sessions_rich(limit=50)
             now = time.time()
             active_sessions = sum(
-                1 for s in sessions
+                1
+                for s in sessions
                 if s.get("ended_at") is None
                 and (now - s.get("last_active", s.get("started_at", 0))) < 300
             )
@@ -357,6 +610,7 @@ async def get_status():
 async def get_sessions(limit: int = 20, offset: int = 0):
     try:
         from hermes_state import SessionDB
+
         db = SessionDB()
         try:
             sessions = db.list_sessions_rich(limit=limit, offset=offset)
@@ -367,7 +621,12 @@ async def get_sessions(limit: int = 20, offset: int = 0):
                     s.get("ended_at") is None
                     and (now - s.get("last_active", s.get("started_at", 0))) < 300
                 )
-            return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
+            return {
+                "sessions": sessions,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
         finally:
             db.close()
     except Exception as e:
@@ -382,12 +641,14 @@ async def search_sessions(q: str = "", limit: int = 20):
         return {"results": []}
     try:
         from hermes_state import SessionDB
+
         db = SessionDB()
         try:
             # Auto-add prefix wildcards so partial words match
             # e.g. "nimb" → "nimb*" matches "nimby"
             # Preserve quoted phrases and existing wildcards as-is
             import re
+
             terms = []
             for token in re.findall(r'"[^"]*"|\S+', q.strip()):
                 if token.startswith('"') or token.endswith("*"):
@@ -498,6 +759,7 @@ def get_model_info():
         # purely auto-detected value, then separately report the override)
         try:
             from agent.model_metadata import get_model_context_length
+
             auto_ctx = get_model_context_length(
                 model=model_name,
                 base_url=base_url,
@@ -518,6 +780,7 @@ def get_model_info():
         caps = {}
         try:
             from agent.models_dev import get_model_capabilities
+
             mc = get_model_capabilities(provider=provider, model=model_name)
             if mc is not None:
                 caps = {
@@ -607,15 +870,15 @@ async def update_config(body: ConfigUpdate):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/api/auth/session-token")
-async def get_session_token():
-    """Return the ephemeral session token for this server instance.
+@app.get("/api/auth/check")
+async def auth_check(request: Request):
+    """Check whether the current request is authenticated.
 
-    The token protects sensitive endpoints (reveal).  It's served to the SPA
-    which stores it in memory — it's never persisted and dies when the server
-    process exits.  CORS already restricts this to localhost origins.
+    Returns 200 if authenticated (localhost or valid token), 401 otherwise.
+    Used by the frontend to determine if a login/pairing flow is needed.
     """
-    return {"token": _SESSION_TOKEN}
+    await require_auth(request)
+    return {"authenticated": True, "is_localhost": _is_localhost(request)}
 
 
 @app.get("/api/env")
@@ -665,22 +928,18 @@ async def remove_env_var(body: EnvVarDelete):
 async def reveal_env_var(body: EnvVarReveal, request: Request):
     """Return the real (unredacted) value of a single env var.
 
-    Protected by:
-    - Ephemeral session token (generated per server start, injected into SPA)
-    - Rate limiting (max 5 reveals per 30s window)
-    - Audit logging
+    Protected by auth middleware + rate limiting + audit logging.
     """
-    # --- Token check ---
-    auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {_SESSION_TOKEN}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    await require_auth(request)
 
     # --- Rate limit ---
     now = time.time()
     cutoff = now - _REVEAL_WINDOW_SECONDS
     _reveal_timestamps[:] = [t for t in _reveal_timestamps if t > cutoff]
     if len(_reveal_timestamps) >= _REVEAL_MAX_PER_WINDOW:
-        raise HTTPException(status_code=429, detail="Too many reveal requests. Try again shortly.")
+        raise HTTPException(
+            status_code=429, detail="Too many reveal requests. Try again shortly."
+        )
     _reveal_timestamps.append(now)
 
     # --- Reveal ---
@@ -798,6 +1057,7 @@ def _claude_code_only_status() -> Dict[str, Any]:
     """
     try:
         from agent.anthropic_adapter import read_claude_code_credentials
+
         creds = read_claude_code_credentials()
     except Exception:
         creds = None
@@ -873,6 +1133,7 @@ def _resolve_provider_status(provider_id: str, status_fn) -> Dict[str, Any]:
             return {"logged_in": False, "error": str(e)}
     try:
         from hermes_cli import auth as hauth
+
         if provider_id == "nous":
             raw = hauth.get_nous_auth_status()
             return {
@@ -930,30 +1191,30 @@ async def list_oauth_providers():
     providers = []
     for p in _OAUTH_PROVIDER_CATALOG:
         status = _resolve_provider_status(p["id"], p.get("status_fn"))
-        providers.append({
-            "id": p["id"],
-            "name": p["name"],
-            "flow": p["flow"],
-            "cli_command": p["cli_command"],
-            "docs_url": p["docs_url"],
-            "status": status,
-        })
+        providers.append(
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "flow": p["flow"],
+                "cli_command": p["cli_command"],
+                "docs_url": p["docs_url"],
+                "status": status,
+            }
+        )
     return {"providers": providers}
 
 
 @app.delete("/api/providers/oauth/{provider_id}")
 async def disconnect_oauth_provider(provider_id: str, request: Request):
-    """Disconnect an OAuth provider. Token-protected (matches /env/reveal)."""
-    auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {_SESSION_TOKEN}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    """Disconnect an OAuth provider. Auth-protected."""
+    await require_auth(request)
 
     valid_ids = {p["id"] for p in _OAUTH_PROVIDER_CATALOG}
     if provider_id not in valid_ids:
         raise HTTPException(
             status_code=400,
             detail=f"Unknown provider: {provider_id}. "
-                   f"Available: {', '.join(sorted(valid_ids))}",
+            f"Available: {', '.join(sorted(valid_ids))}",
         )
 
     # Anthropic and claude-code clear the same Hermes-managed PKCE file
@@ -963,6 +1224,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
     if provider_id in ("anthropic", "claude-code"):
         try:
             from agent.anthropic_adapter import _HERMES_OAUTH_FILE
+
             if _HERMES_OAUTH_FILE.exists():
                 _HERMES_OAUTH_FILE.unlink()
         except Exception:
@@ -970,6 +1232,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
         # Also clear the credential pool entry if present.
         try:
             from hermes_cli.auth import clear_provider_auth
+
             clear_provider_auth("anthropic")
         except Exception:
             pass
@@ -978,6 +1241,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
 
     try:
         from hermes_cli.auth import clear_provider_auth
+
         cleared = clear_provider_auth(provider_id)
         _log.info("oauth/disconnect: %s (cleared=%s)", provider_id, cleared)
         return {"ok": bool(cleared), "provider": provider_id}
@@ -1037,6 +1301,7 @@ try:
         _OAUTH_SCOPES as _ANTHROPIC_OAUTH_SCOPES,
         _generate_pkce as _generate_pkce_pair,
     )
+
     _ANTHROPIC_OAUTH_AVAILABLE = True
 except ImportError:
     _ANTHROPIC_OAUTH_AVAILABLE = False
@@ -1047,7 +1312,9 @@ def _gc_oauth_sessions() -> None:
     """Drop expired sessions. Called opportunistically on /start."""
     cutoff = time.time() - _OAUTH_SESSION_TTL_SECONDS
     with _oauth_sessions_lock:
-        stale = [sid for sid, sess in _oauth_sessions.items() if sess["created_at"] < cutoff]
+        stale = [
+            sid for sid, sess in _oauth_sessions.items() if sess["created_at"] < cutoff
+        ]
         for sid in stale:
             _oauth_sessions.pop(sid, None)
 
@@ -1068,13 +1335,16 @@ def _new_oauth_session(provider_id: str, flow: str) -> tuple[str, Dict[str, Any]
     return sid, sess
 
 
-def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_at_ms: int) -> None:
+def _save_anthropic_oauth_creds(
+    access_token: str, refresh_token: str, expires_at_ms: int
+) -> None:
     """Persist Anthropic PKCE creds to both Hermes file AND credential pool.
 
     Mirrors what auth_commands.add_command does so the dashboard flow leaves
     the system in the same state as ``hermes auth add anthropic``.
     """
     from agent.anthropic_adapter import _HERMES_OAUTH_FILE
+
     payload = {
         "accessToken": access_token,
         "refreshToken": refresh_token,
@@ -1093,9 +1363,14 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
             SOURCE_MANUAL,
         )
         import uuid
+
         pool = load_pool("anthropic")
         # Avoid duplicate entries: delete any prior dashboard-issued OAuth entry
-        existing = [e for e in pool.entries() if getattr(e, "source", "").startswith(f"{SOURCE_MANUAL}:dashboard_pkce")]
+        existing = [
+            e
+            for e in pool.entries()
+            if getattr(e, "source", "").startswith(f"{SOURCE_MANUAL}:dashboard_pkce")
+        ]
         for e in existing:
             try:
                 pool.remove_entry(getattr(e, "id", ""))
@@ -1120,7 +1395,9 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
 def _start_anthropic_pkce() -> Dict[str, Any]:
     """Begin PKCE flow. Returns the auth URL the UI should open."""
     if not _ANTHROPIC_OAUTH_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Anthropic OAuth not available (missing adapter)")
+        raise HTTPException(
+            status_code=501, detail="Anthropic OAuth not available (missing adapter)"
+        )
     verifier, challenge = _generate_pkce_pair()
     sid, sess = _new_oauth_session("anthropic", "pkce")
     sess["verifier"] = verifier
@@ -1151,7 +1428,11 @@ def _submit_anthropic_pkce(session_id: str, code_input: str) -> Dict[str, Any]:
     if not sess or sess["provider"] != "anthropic" or sess["flow"] != "pkce":
         raise HTTPException(status_code=404, detail="Unknown or expired session")
     if sess["status"] != "pending":
-        return {"ok": False, "status": sess["status"], "message": sess.get("error_message")}
+        return {
+            "ok": False,
+            "status": sess["status"],
+            "message": sess.get("error_message"),
+        }
 
     # Anthropic's redirect callback page formats the code as `<code>#<state>`.
     # Strip the state suffix if present (we already have the verifier server-side).
@@ -1161,14 +1442,16 @@ def _submit_anthropic_pkce(session_id: str, code_input: str) -> Dict[str, Any]:
         return {"ok": False, "status": "error", "message": "No code provided"}
     state_from_callback = parts[1] if len(parts) > 1 else ""
 
-    exchange_data = json.dumps({
-        "grant_type": "authorization_code",
-        "client_id": _ANTHROPIC_OAUTH_CLIENT_ID,
-        "code": code,
-        "state": state_from_callback or sess["state"],
-        "redirect_uri": _ANTHROPIC_OAUTH_REDIRECT_URI,
-        "code_verifier": sess["verifier"],
-    }).encode()
+    exchange_data = json.dumps(
+        {
+            "grant_type": "authorization_code",
+            "client_id": _ANTHROPIC_OAUTH_CLIENT_ID,
+            "code": code,
+            "state": state_from_callback or sess["state"],
+            "redirect_uri": _ANTHROPIC_OAUTH_REDIRECT_URI,
+            "code_verifier": sess["verifier"],
+        }
+    ).encode()
     req = urllib.request.Request(
         _ANTHROPIC_OAUTH_TOKEN_URL,
         data=exchange_data,
@@ -1214,9 +1497,11 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
     so the UI can render the verification page link + user code.
     """
     from hermes_cli import auth as hauth
+
     if provider_id == "nous":
         from hermes_cli.auth import _request_device_code, PROVIDER_REGISTRY
         import httpx
+
         pconfig = PROVIDER_REGISTRY["nous"]
         portal_base_url = (
             os.getenv("HERMES_PORTAL_BASE_URL")
@@ -1225,15 +1510,21 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
         ).rstrip("/")
         client_id = pconfig.client_id
         scope = pconfig.scope
+
         def _do_nous_device_request():
-            with httpx.Client(timeout=httpx.Timeout(15.0), headers={"Accept": "application/json"}) as client:
+            with httpx.Client(
+                timeout=httpx.Timeout(15.0), headers={"Accept": "application/json"}
+            ) as client:
                 return _request_device_code(
                     client=client,
                     portal_base_url=portal_base_url,
                     client_id=client_id,
                     scope=scope,
                 )
-        device_data = await asyncio.get_event_loop().run_in_executor(None, _do_nous_device_request)
+
+        device_data = await asyncio.get_event_loop().run_in_executor(
+            None, _do_nous_device_request
+        )
         sid, sess = _new_oauth_session("nous", "device_code")
         sess["device_code"] = str(device_data["device_code"])
         sess["interval"] = int(device_data["interval"])
@@ -1261,7 +1552,9 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
         # verification_url back via the session dict. The helper prints
         # to stdout — we capture nothing here, just status.
         threading.Thread(
-            target=_codex_full_login_worker, args=(sid,), daemon=True,
+            target=_codex_full_login_worker,
+            args=(sid,),
+            daemon=True,
             name=f"oauth-codex-{sid[:6]}",
         ).start()
         # Block briefly until the worker has populated the user_code, OR error.
@@ -1275,9 +1568,14 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
         with _oauth_sessions_lock:
             s = _oauth_sessions.get(sid, {})
         if s.get("status") == "error":
-            raise HTTPException(status_code=500, detail=s.get("error_message") or "device-auth failed")
+            raise HTTPException(
+                status_code=500, detail=s.get("error_message") or "device-auth failed"
+            )
         if not s.get("user_code"):
-            raise HTTPException(status_code=504, detail="device-auth timed out before returning a user code")
+            raise HTTPException(
+                status_code=504,
+                detail="device-auth timed out before returning a user code",
+            )
         return {
             "session_id": sid,
             "flow": "device_code",
@@ -1287,7 +1585,10 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
             "poll_interval": int(s.get("interval") or 5),
         }
 
-    raise HTTPException(status_code=400, detail=f"Provider {provider_id} does not support device-code flow")
+    raise HTTPException(
+        status_code=400,
+        detail=f"Provider {provider_id} does not support device-code flow",
+    )
 
 
 def _nous_poller(session_id: str) -> None:
@@ -1295,6 +1596,7 @@ def _nous_poller(session_id: str) -> None:
     from hermes_cli.auth import _poll_for_token, refresh_nous_oauth_from_state
     from datetime import datetime, timezone
     import httpx
+
     with _oauth_sessions_lock:
         sess = _oauth_sessions.get(session_id)
     if not sess:
@@ -1305,7 +1607,9 @@ def _nous_poller(session_id: str) -> None:
     interval = sess["interval"]
     expires_in = max(60, int(sess["expires_at"] - time.time()))
     try:
-        with httpx.Client(timeout=httpx.Timeout(15.0), headers={"Accept": "application/json"}) as client:
+        with httpx.Client(
+            timeout=httpx.Timeout(15.0), headers={"Accept": "application/json"}
+        ) as client:
             token_data = _poll_for_token(
                 client=client,
                 portal_base_url=portal_base_url,
@@ -1327,14 +1631,20 @@ def _nous_poller(session_id: str) -> None:
             "refresh_token": token_data.get("refresh_token"),
             "obtained_at": now.isoformat(),
             "expires_at": (
-                datetime.fromtimestamp(now.timestamp() + token_ttl, tz=timezone.utc).isoformat()
-                if token_ttl else None
+                datetime.fromtimestamp(
+                    now.timestamp() + token_ttl, tz=timezone.utc
+                ).isoformat()
+                if token_ttl
+                else None
             ),
             "expires_in": token_ttl,
         }
         full_state = refresh_nous_oauth_from_state(
-            auth_state, min_key_ttl_seconds=300, timeout_seconds=15.0,
-            force_refresh=False, force_mint=True,
+            auth_state,
+            min_key_ttl_seconds=300,
+            timeout_seconds=15.0,
+            force_refresh=False,
+            force_mint=True,
         )
         # Save into credential pool same as auth_commands.py does
         from agent.credential_pool import (
@@ -1343,22 +1653,29 @@ def _nous_poller(session_id: str) -> None:
             AUTH_TYPE_OAUTH,
             SOURCE_MANUAL,
         )
+
         pool = load_pool("nous")
-        entry = PooledCredential.from_dict("nous", {
-            **full_state,
-            "label": "dashboard device_code",
-            "auth_type": AUTH_TYPE_OAUTH,
-            "source": f"{SOURCE_MANUAL}:dashboard_device_code",
-            "base_url": full_state.get("inference_base_url"),
-        })
+        entry = PooledCredential.from_dict(
+            "nous",
+            {
+                **full_state,
+                "label": "dashboard device_code",
+                "auth_type": AUTH_TYPE_OAUTH,
+                "source": f"{SOURCE_MANUAL}:dashboard_device_code",
+                "base_url": full_state.get("inference_base_url"),
+            },
+        )
         pool.add_entry(entry)
         # Also persist to auth store so get_nous_auth_status() sees it
         # (matches what _login_nous in auth.py does for the CLI flow).
         try:
             from hermes_cli.auth import (
-                _load_auth_store, _save_provider_state, _save_auth_store,
+                _load_auth_store,
+                _save_provider_state,
+                _save_auth_store,
                 _auth_store_lock,
             )
+
             with _auth_store_lock():
                 auth_store = _load_auth_store()
                 _save_provider_state(auth_store, "nous", full_state)
@@ -1366,7 +1683,9 @@ def _nous_poller(session_id: str) -> None:
         except Exception as store_exc:
             _log.warning(
                 "oauth/device: credential pool saved but auth store write failed "
-                "(session=%s): %s", session_id, store_exc,
+                "(session=%s): %s",
+                session_id,
+                store_exc,
             )
         with _oauth_sessions_lock:
             sess["status"] = "approved"
@@ -1400,6 +1719,7 @@ def _codex_full_login_worker(session_id: str) -> None:
             CODEX_OAUTH_TOKEN_URL,
             DEFAULT_CODEX_BASE_URL,
         )
+
         issuer = "https://auth.openai.com"
 
         # Step 1: request device code
@@ -1416,7 +1736,9 @@ def _codex_full_login_worker(session_id: str) -> None:
         device_auth_id = device_data.get("device_auth_id", "")
         poll_interval = max(3, int(device_data.get("interval", "5")))
         if not user_code or not device_auth_id:
-            raise RuntimeError("device-code response missing user_code or device_auth_id")
+            raise RuntimeError(
+                "device-code response missing user_code or device_auth_id"
+            )
         verification_url = f"{issuer}/codex/device"
         with _oauth_sessions_lock:
             sess = _oauth_sessions.get(session_id)
@@ -1457,7 +1779,9 @@ def _codex_full_login_worker(session_id: str) -> None:
         authorization_code = code_resp.get("authorization_code", "")
         code_verifier = code_resp.get("code_verifier", "")
         if not authorization_code or not code_verifier:
-            raise RuntimeError("device-auth response missing authorization_code/code_verifier")
+            raise RuntimeError(
+                "device-auth response missing authorization_code/code_verifier"
+            )
         with httpx.Client(timeout=httpx.Timeout(15.0)) as client:
             token_resp = client.post(
                 CODEX_OAUTH_TOKEN_URL,
@@ -1486,6 +1810,7 @@ def _codex_full_login_worker(session_id: str) -> None:
             SOURCE_MANUAL,
         )
         import uuid as _uuid
+
         pool = load_pool("openai-codex")
         base_url = (
             os.getenv("HERMES_CODEX_BASE_URL", "").strip().rstrip("/")
@@ -1517,10 +1842,8 @@ def _codex_full_login_worker(session_id: str) -> None:
 
 @app.post("/api/providers/oauth/{provider_id}/start")
 async def start_oauth_login(provider_id: str, request: Request):
-    """Initiate an OAuth login flow. Token-protected."""
-    auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {_SESSION_TOKEN}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    """Initiate an OAuth login flow. Auth-protected."""
+    await require_auth(request)
     _gc_oauth_sessions()
     valid = {p["id"] for p in _OAUTH_PROVIDER_CATALOG}
     if provider_id not in valid:
@@ -1551,15 +1874,18 @@ class OAuthSubmitBody(BaseModel):
 
 @app.post("/api/providers/oauth/{provider_id}/submit")
 async def submit_oauth_code(provider_id: str, body: OAuthSubmitBody, request: Request):
-    """Submit the auth code for PKCE flows. Token-protected."""
-    auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {_SESSION_TOKEN}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    """Submit the auth code for PKCE flows. Auth-protected."""
+    await require_auth(request)
     if provider_id == "anthropic":
         return await asyncio.get_event_loop().run_in_executor(
-            None, _submit_anthropic_pkce, body.session_id, body.code,
+            None,
+            _submit_anthropic_pkce,
+            body.session_id,
+            body.code,
         )
-    raise HTTPException(status_code=400, detail=f"submit not supported for {provider_id}")
+    raise HTTPException(
+        status_code=400, detail=f"submit not supported for {provider_id}"
+    )
 
 
 @app.get("/api/providers/oauth/{provider_id}/poll/{session_id}")
@@ -1581,10 +1907,8 @@ async def poll_oauth_session(provider_id: str, session_id: str):
 
 @app.delete("/api/providers/oauth/sessions/{session_id}")
 async def cancel_oauth_session(session_id: str, request: Request):
-    """Cancel a pending OAuth session. Token-protected."""
-    auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {_SESSION_TOKEN}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    """Cancel a pending OAuth session. Auth-protected."""
+    await require_auth(request)
     with _oauth_sessions_lock:
         sess = _oauth_sessions.pop(session_id, None)
     if sess is None:
@@ -1600,6 +1924,7 @@ async def cancel_oauth_session(session_id: str, request: Request):
 @app.get("/api/sessions/{session_id}")
 async def get_session_detail(session_id: str):
     from hermes_state import SessionDB
+
     db = SessionDB()
     try:
         sid = db.resolve_session_id(session_id)
@@ -1614,6 +1939,7 @@ async def get_session_detail(session_id: str):
 @app.get("/api/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str):
     from hermes_state import SessionDB
+
     db = SessionDB()
     try:
         sid = db.resolve_session_id(session_id)
@@ -1628,6 +1954,7 @@ async def get_session_messages(session_id: str):
 @app.delete("/api/sessions/{session_id}")
 async def delete_session_endpoint(session_id: str):
     from hermes_state import SessionDB
+
     db = SessionDB()
     try:
         if not db.delete_session(session_id):
@@ -1674,14 +2001,15 @@ async def get_logs(
             raise HTTPException(
                 status_code=400,
                 detail=f"Unknown component: {component}. "
-                       f"Available: {', '.join(sorted(COMPONENT_PREFIXES))}",
+                f"Available: {', '.join(sorted(COMPONENT_PREFIXES))}",
             )
     else:
         comp_prefixes = None
 
     has_filters = bool(min_level or comp_prefixes or search)
     result = _read_tail(
-        log_path, min(lines, 500) if not search else 2000,
+        log_path,
+        min(lines, 500) if not search else 2000,
         has_filters=has_filters,
         min_level=min_level,
         component_prefixes=comp_prefixes,
@@ -1691,7 +2019,7 @@ async def get_logs(
     # trim to the requested line count afterward.
     if search:
         needle = search.lower()
-        result = [l for l in result if needle in l.lower()][-min(lines, 500):]
+        result = [l for l in result if needle in l.lower()][-min(lines, 500) :]
     return {"file": file, "lines": result}
 
 
@@ -1714,12 +2042,14 @@ class CronJobUpdate(BaseModel):
 @app.get("/api/cron/jobs")
 async def list_cron_jobs():
     from cron.jobs import list_jobs
+
     return list_jobs(include_disabled=True)
 
 
 @app.get("/api/cron/jobs/{job_id}")
 async def get_cron_job(job_id: str):
     from cron.jobs import get_job
+
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1729,9 +2059,14 @@ async def get_cron_job(job_id: str):
 @app.post("/api/cron/jobs")
 async def create_cron_job(body: CronJobCreate):
     from cron.jobs import create_job
+
     try:
-        job = create_job(prompt=body.prompt, schedule=body.schedule,
-                         name=body.name, deliver=body.deliver)
+        job = create_job(
+            prompt=body.prompt,
+            schedule=body.schedule,
+            name=body.name,
+            deliver=body.deliver,
+        )
         return job
     except Exception as e:
         _log.exception("POST /api/cron/jobs failed")
@@ -1741,6 +2076,7 @@ async def create_cron_job(body: CronJobCreate):
 @app.put("/api/cron/jobs/{job_id}")
 async def update_cron_job(job_id: str, body: CronJobUpdate):
     from cron.jobs import update_job
+
     job = update_job(job_id, body.updates)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1750,6 +2086,7 @@ async def update_cron_job(job_id: str, body: CronJobUpdate):
 @app.post("/api/cron/jobs/{job_id}/pause")
 async def pause_cron_job(job_id: str):
     from cron.jobs import pause_job
+
     job = pause_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1759,6 +2096,7 @@ async def pause_cron_job(job_id: str):
 @app.post("/api/cron/jobs/{job_id}/resume")
 async def resume_cron_job(job_id: str):
     from cron.jobs import resume_job
+
     job = resume_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1768,6 +2106,7 @@ async def resume_cron_job(job_id: str):
 @app.post("/api/cron/jobs/{job_id}/trigger")
 async def trigger_cron_job(job_id: str):
     from cron.jobs import trigger_job
+
     job = trigger_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1777,6 +2116,7 @@ async def trigger_cron_job(job_id: str):
 @app.delete("/api/cron/jobs/{job_id}")
 async def delete_cron_job(job_id: str):
     from cron.jobs import remove_job
+
     if not remove_job(job_id):
         raise HTTPException(status_code=404, detail="Job not found")
     return {"ok": True}
@@ -1796,6 +2136,7 @@ class SkillToggle(BaseModel):
 async def get_skills():
     from tools.skills_tool import _find_all_skills
     from hermes_cli.skills_config import get_disabled_skills
+
     config = load_config()
     disabled = get_disabled_skills(config)
     skills = _find_all_skills(skip_disabled=True)
@@ -1807,6 +2148,7 @@ async def get_skills():
 @app.put("/api/skills/toggle")
 async def toggle_skill(body: SkillToggle):
     from hermes_cli.skills_config import get_disabled_skills, save_disabled_skills
+
     config = load_config()
     disabled = get_disabled_skills(config)
     if body.enabled:
@@ -1839,13 +2181,17 @@ async def get_toolsets():
         except Exception:
             tools = []
         is_enabled = name in enabled_toolsets
-        result.append({
-            "name": name, "label": label, "description": desc,
-            "enabled": is_enabled,
-            "available": is_enabled,
-            "configured": _toolset_has_keys(name, config),
-            "tools": tools,
-        })
+        result.append(
+            {
+                "name": name,
+                "label": label,
+                "description": desc,
+                "enabled": is_enabled,
+                "available": is_enabled,
+                "configured": _toolset_has_keys(name, config),
+                "tools": tools,
+            }
+        )
     return result
 
 
@@ -1886,10 +2232,12 @@ async def update_config_raw(body: RawConfigUpdate):
 @app.get("/api/analytics/usage")
 async def get_usage_analytics(days: int = 30):
     from hermes_state import SessionDB
+
     db = SessionDB()
     try:
         cutoff = time.time() - (days * 86400)
-        cur = db._conn.execute("""
+        cur = db._conn.execute(
+            """
             SELECT date(started_at, 'unixepoch') as day,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
@@ -1900,10 +2248,13 @@ async def get_usage_analytics(days: int = 30):
                    COUNT(*) as sessions
             FROM sessions WHERE started_at > ?
             GROUP BY day ORDER BY day
-        """, (cutoff,))
+        """,
+            (cutoff,),
+        )
         daily = [dict(r) for r in cur.fetchall()]
 
-        cur2 = db._conn.execute("""
+        cur2 = db._conn.execute(
+            """
             SELECT model,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
@@ -1911,10 +2262,13 @@ async def get_usage_analytics(days: int = 30):
                    COUNT(*) as sessions
             FROM sessions WHERE started_at > ? AND model IS NOT NULL
             GROUP BY model ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
-        """, (cutoff,))
+        """,
+            (cutoff,),
+        )
         by_model = [dict(r) for r in cur2.fetchall()]
 
-        cur3 = db._conn.execute("""
+        cur3 = db._conn.execute(
+            """
             SELECT SUM(input_tokens) as total_input,
                    SUM(output_tokens) as total_output,
                    SUM(cache_read_tokens) as total_cache_read,
@@ -1923,10 +2277,17 @@ async def get_usage_analytics(days: int = 30):
                    COALESCE(SUM(actual_cost_usd), 0) as total_actual_cost,
                    COUNT(*) as total_sessions
             FROM sessions WHERE started_at > ?
-        """, (cutoff,))
+        """,
+            (cutoff,),
+        )
         totals = dict(cur3.fetchone())
 
-        return {"daily": daily, "by_model": by_model, "totals": totals, "period_days": days}
+        return {
+            "daily": daily,
+            "by_model": by_model,
+            "totals": totals,
+            "period_days": days,
+        }
     finally:
         db.close()
 
@@ -1934,15 +2295,19 @@ async def get_usage_analytics(days: int = 30):
 def mount_spa(application: FastAPI):
     """Mount the built SPA. Falls back to index.html for client-side routing."""
     if not WEB_DIST.exists():
+
         @application.get("/{full_path:path}")
         async def no_frontend(full_path: str):
             return JSONResponse(
                 {"error": "Frontend not built. Run: cd web && npm run build"},
                 status_code=404,
             )
+
         return
 
-    application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+    application.mount(
+        "/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets"
+    )
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -1969,10 +2334,27 @@ def start_server(host: str = "127.0.0.1", port: int = 9119, open_browser: bool =
     import uvicorn
 
     if host not in ("127.0.0.1", "localhost", "::1"):
+        if not _API_SERVER_KEY:
+            print(
+                "Error: Binding to a non-localhost address requires API_SERVER_KEY.\n"
+                "Set it in your environment:\n"
+                "  export API_SERVER_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')\n"
+                "Then restart: hermes dashboard --host 0.0.0.0"
+            )
+            sys.exit(1)
+        # Widen CORS to allow the actual origin when serving over a network
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         import logging
-        logging.warning(
-            "Binding to %s — the web UI exposes config and API keys. "
-            "Only bind to non-localhost if you trust all users on the network.", host,
+
+        logging.info(
+            "Binding to %s with API_SERVER_KEY authentication enabled. "
+            "All non-localhost requests require a valid Bearer token.",
+            host,
         )
 
     if open_browser:
@@ -1981,6 +2363,7 @@ def start_server(host: str = "127.0.0.1", port: int = 9119, open_browser: bool =
 
         def _open():
             import time as _t
+
             _t.sleep(1.0)
             webbrowser.open(f"http://{host}:{port}")
 

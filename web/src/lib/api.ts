@@ -1,23 +1,61 @@
 const BASE = "";
 
-// Ephemeral session token for protected endpoints (reveal).
-// Fetched once on first reveal request and cached in memory.
-let _sessionToken: string | null = null;
+// ---------------------------------------------------------------------------
+// Auth token management
+// ---------------------------------------------------------------------------
+// On localhost: no token needed (server bypasses auth).
+// On remote: device token from localStorage (obtained via pairing flow).
+
+const TOKEN_KEY = "hermes-device-token";
+
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // localStorage unavailable (private browsing etc.)
+  }
+}
+
+export function clearStoredToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Callback invoked when a 401 is received — lets the app show pairing UI. */
+let _onAuthRequired: (() => void) | null = null;
+export function onAuthRequired(cb: () => void): void {
+  _onAuthRequired = cb;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, init);
+  const headers = { ...authHeaders(), ...((init?.headers as Record<string, string>) ?? {}) };
+  const res = await fetch(`${BASE}${url}`, { ...init, headers });
+  if (res.status === 401) {
+    // Token is invalid or revoked
+    _onAuthRequired?.();
+    throw new Error("Unauthorized — pairing required");
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
   }
   return res.json();
-}
-
-async function getSessionToken(): Promise<string> {
-  if (_sessionToken) return _sessionToken;
-  const resp = await fetchJSON<{ token: string }>("/api/auth/session-token");
-  _sessionToken = resp.token;
-  return _sessionToken;
 }
 
 export const api = {
@@ -70,17 +108,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key }),
     }),
-  revealEnvVar: async (key: string) => {
-    const token = await getSessionToken();
-    return fetchJSON<{ key: string; value: string }>("/api/env/reveal", {
+  revealEnvVar: (key: string) =>
+    fetchJSON<{ key: string; value: string }>("/api/env/reveal", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key }),
-    });
-  },
+    }),
 
   // Cron jobs
   getCronJobs: () => fetchJSON<CronJob[]>("/api/cron/jobs"),
@@ -116,59 +149,70 @@ export const api = {
   // OAuth provider management
   getOAuthProviders: () =>
     fetchJSON<OAuthProvidersResponse>("/api/providers/oauth"),
-  disconnectOAuthProvider: async (providerId: string) => {
-    const token = await getSessionToken();
-    return fetchJSON<{ ok: boolean; provider: string }>(
+  disconnectOAuthProvider: (providerId: string) =>
+    fetchJSON<{ ok: boolean; provider: string }>(
       `/api/providers/oauth/${encodeURIComponent(providerId)}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-  },
-  startOAuthLogin: async (providerId: string) => {
-    const token = await getSessionToken();
-    return fetchJSON<OAuthStartResponse>(
+      { method: "DELETE" },
+    ),
+  startOAuthLogin: (providerId: string) =>
+    fetchJSON<OAuthStartResponse>(
       `/api/providers/oauth/${encodeURIComponent(providerId)}/start`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: "{}",
       },
-    );
-  },
-  submitOAuthCode: async (providerId: string, sessionId: string, code: string) => {
-    const token = await getSessionToken();
-    return fetchJSON<OAuthSubmitResponse>(
+    ),
+  submitOAuthCode: (providerId: string, sessionId: string, code: string) =>
+    fetchJSON<OAuthSubmitResponse>(
       `/api/providers/oauth/${encodeURIComponent(providerId)}/submit`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, code }),
       },
-    );
-  },
+    ),
   pollOAuthSession: (providerId: string, sessionId: string) =>
     fetchJSON<OAuthPollResponse>(
       `/api/providers/oauth/${encodeURIComponent(providerId)}/poll/${encodeURIComponent(sessionId)}`,
     ),
-  cancelOAuthSession: async (sessionId: string) => {
-    const token = await getSessionToken();
-    return fetchJSON<{ ok: boolean }>(
+  cancelOAuthSession: (sessionId: string) =>
+    fetchJSON<{ ok: boolean }>(
       `/api/providers/oauth/sessions/${encodeURIComponent(sessionId)}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-  },
+      { method: "DELETE" },
+    ),
+
+  // Auth & pairing
+  checkAuth: () =>
+    fetchJSON<{ authenticated: boolean; is_localhost: boolean }>("/api/auth/check"),
+  beginPairing: () =>
+    fetchJSON<{ code: string; expires_in: number }>("/api/pair/begin", {
+      method: "POST",
+    }),
+  completePairing: (code: string, deviceName: string) =>
+    fetch(`${BASE}/api/pair/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, device_name: deviceName }),
+    }).then(async (res) => {
+      if (!res.ok) return { token: null };
+      const data = await res.json();
+      return data as { token: string | null };
+    }),
+  listDevices: () =>
+    fetchJSON<{ devices: PairedDevice[] }>("/api/pair/devices"),
+  revokeDevice: (deviceId: string) =>
+    fetchJSON<{ ok: boolean }>(`/api/pair/devices/${encodeURIComponent(deviceId)}`, {
+      method: "DELETE",
+    }),
 };
+
+export interface PairedDevice {
+  id: string;
+  name: string;
+  created_at: number | null;
+  last_used: number | null;
+}
 
 export interface PlatformStatus {
   error_code?: string;
