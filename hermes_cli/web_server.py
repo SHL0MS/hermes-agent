@@ -81,6 +81,59 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
+# Auth middleware — protects ALL /api/* endpoints globally
+# ---------------------------------------------------------------------------
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse as StarletteJSONResponse
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Enforce auth on all /api/* routes except the pairing completion endpoint.
+
+    - Localhost (127.0.0.1, ::1): bypass auth
+    - Non-localhost: require Bearer token (API_SERVER_KEY or device token)
+    - /api/pair/complete is exempt (phone doesn't have a token yet)
+    """
+
+    # Endpoints that don't require auth (phone needs to complete pairing first)
+    _EXEMPT_PATHS = frozenset({"/api/pair/complete"})
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Only protect /api/* routes
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        # Exempt endpoints
+        if path in self._EXEMPT_PATHS:
+            return await call_next(request)
+
+        # Localhost bypass
+        client = request.client
+        if client and client.host in ("127.0.0.1", "::1", "localhost"):
+            return await call_next(request)
+
+        # Check Bearer token
+        auth = request.headers.get("authorization", "")
+        token = auth.removeprefix("Bearer ").strip()
+        if token:
+            if _API_SERVER_KEY and hmac.compare_digest(token, _API_SERVER_KEY):
+                return await call_next(request)
+            if _device_store.validate_token(token):
+                return await call_next(request)
+
+        return StarletteJSONResponse(
+            {"detail": "Unauthorized"},
+            status_code=401,
+        )
+
+
+app.add_middleware(AuthMiddleware)
+
+
+# ---------------------------------------------------------------------------
 # Authentication — API Server Key + device pairing tokens
 # ---------------------------------------------------------------------------
 #
