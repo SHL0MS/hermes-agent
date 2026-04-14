@@ -138,33 +138,34 @@ export default function App() {
       {/* ---- Mobile bottom tab bar (visible below sm) ---- */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur-sm sm:hidden safe-bottom">
         <div className="flex items-stretch h-14">
-          {MOBILE_TABS.map(({ id, labelKey, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => navigateTo(id)}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] cursor-pointer transition-colors ${
-                page === id && !isMorePage
-                  ? "text-foreground"
-                  : "text-muted-foreground"
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="text-[0.55rem] font-display tracking-[0.1em] uppercase">
-                {t.app.nav[labelKey]}
-              </span>
-            </button>
-          ))}
+          {MOBILE_TABS.map(({ id, labelKey, icon: Icon }) => {
+            const active = page === id && !isMorePage;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => navigateTo(id)}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] cursor-pointer transition-colors ${
+                  active ? "text-foreground" : "text-muted-foreground/60"
+                }`}
+              >
+                {active && <span className="absolute top-0 left-3 right-3 h-[2px] bg-foreground" />}
+                <Icon className="h-5 w-5" />
+                <span className="text-[0.55rem] font-display tracking-[0.1em] uppercase">
+                  {t.app.nav[labelKey]}
+                </span>
+              </button>
+            );
+          })}
           {/* More button */}
           <button
             type="button"
             onClick={() => setMoreOpen(!moreOpen)}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] cursor-pointer transition-colors ${
-              isMorePage || moreOpen
-                ? "text-foreground"
-                : "text-muted-foreground"
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[44px] cursor-pointer transition-colors ${
+              isMorePage || moreOpen ? "text-foreground" : "text-muted-foreground/60"
             }`}
           >
+            {(isMorePage || moreOpen) && <span className="absolute top-0 left-3 right-3 h-[2px] bg-foreground" />}
             {moreOpen ? <X className="h-5 w-5" /> : <MoreHorizontal className="h-5 w-5" />}
             <span className="text-[0.55rem] font-display tracking-[0.1em] uppercase">
               More
