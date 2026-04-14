@@ -56,6 +56,7 @@ export interface Translations {
     };
     nav: {
       status: string;
+      chat: string;
       sessions: string;
       analytics: string;
       logs: string;
@@ -281,6 +282,14 @@ export interface Translations {
       external: string;
     };
     expiresIn: string;
+  };
+
+  // ── Chat page ──
+  chat: {
+    unavailable: string;
+    unavailableDesc: string;
+    placeholder: string;
+    inputPlaceholder: string;
   };
 
   // ── Language switcher ──

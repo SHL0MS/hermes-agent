@@ -2022,6 +2022,116 @@ async def get_usage_analytics(days: int = 30):
         db.close()
 
 
+
+# ---------------------------------------------------------------------------
+# Chat proxy — thin relay to the API server's /v1/chat/completions
+# ---------------------------------------------------------------------------
+
+_API_SERVER_PORT = int(os.getenv("API_SERVER_PORT", "8642"))
+
+
+class ChatRequest(BaseModel):
+    messages: List[Dict[str, Any]]
+    session_id: Optional[str] = None
+
+
+@app.post("/api/chat/send")
+async def chat_send(body: ChatRequest):
+    """Proxy a chat message to the gateway's API server with SSE streaming."""
+    try:
+        import httpx
+    except ImportError:
+        raise HTTPException(status_code=501, detail="httpx not installed")
+
+    api_url = f"http://127.0.0.1:{_API_SERVER_PORT}/v1/chat/completions"
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    api_key = os.getenv("API_SERVER_KEY", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if body.session_id:
+        headers["X-Hermes-Session-Id"] = body.session_id
+
+    from starlette.responses import StreamingResponse
+
+    async def stream_proxy():
+        got_content = False
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+                async with client.stream(
+                    "POST", api_url,
+                    json={"messages": body.messages, "stream": True},
+                    headers=headers,
+                ) as resp:
+                    if resp.status_code != 200:
+                        error_body = await resp.aread()
+                        yield f"data: {json.dumps({'error': error_body.decode()})}\n\n"
+                        return
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data == "[DONE]":
+                            yield f"{line}\n\n"
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                            if delta.get("content"):
+                                got_content = True
+                            yield f"{line}\n\n"
+                            # Stream ended without content (agent error) - break early
+                            if finish and not got_content:
+                                break
+                        except (json.JSONDecodeError, IndexError):
+                            yield f"{line}\n\n"
+
+                # Empty stream fallback: non-streaming request to surface errors
+                if not got_content:
+                    try:
+                        fb = await client.post(
+                            api_url,
+                            json={"messages": body.messages, "stream": False},
+                            headers=headers,
+                            timeout=httpx.Timeout(120.0),
+                        )
+                        if fb.status_code == 200:
+                            content = fb.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                            if content:
+                                yield f"data: {json.dumps({'choices': [{'index': 0, 'delta': {'content': content}, 'finish_reason': 'stop'}]})}\n\n"
+                                yield "data: [DONE]\n\n"
+                    except Exception:
+                        pass
+
+        except httpx.ConnectError:
+            yield f"data: {json.dumps({'error': 'API server not reachable. Start the gateway with the api_server platform enabled.'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        stream_proxy(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/chat/status")
+async def chat_status():
+    """Check whether the API server is reachable for chat."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=httpx.Timeout(3.0)) as client:
+            resp = await client.get(f"http://127.0.0.1:{_API_SERVER_PORT}/health")
+            if resp.status_code == 200:
+                return {"available": True}
+    except Exception:
+        pass
+    return {
+        "available": False,
+        "message": "API server not reachable. Start the gateway with the api_server platform enabled.",
+    }
+
+
 def mount_spa(application: FastAPI):
     """Mount the built SPA. Falls back to index.html for client-side routing.
 

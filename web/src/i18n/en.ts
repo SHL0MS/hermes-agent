@@ -54,6 +54,7 @@ export const en: Translations = {
     },
     nav: {
       status: "Status",
+      chat: "Chat",
       sessions: "Sessions",
       analytics: "Analytics",
       logs: "Logs",
@@ -270,6 +271,13 @@ export const en: Translations = {
       external: "External CLI",
     },
     expiresIn: "expires in {time}",
+  },
+
+  chat: {
+    unavailable: "Chat unavailable",
+    unavailableDesc: "The API server platform is not running. Start the gateway with the API server platform enabled to use chat.",
+    placeholder: "Send a message to start chatting with Hermes",
+    inputPlaceholder: "Message Hermes...",
   },
 
   language: {

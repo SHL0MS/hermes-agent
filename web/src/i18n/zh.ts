@@ -54,6 +54,7 @@ export const zh: Translations = {
     },
     nav: {
       status: "状态",
+      chat: "聊天",
       sessions: "会话",
       analytics: "分析",
       logs: "日志",
@@ -270,6 +271,13 @@ export const zh: Translations = {
       external: "外部 CLI",
     },
     expiresIn: "{time}后过期",
+  },
+
+  chat: {
+    unavailable: "聊天不可用",
+    unavailableDesc: "API 服务器平台未运行。请启动网关并启用 API 服务器平台以使用聊天。",
+    placeholder: "发送消息开始与 Hermes 聊天",
+    inputPlaceholder: "给 Hermes 发消息...",
   },
 
   language: {

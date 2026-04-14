@@ -182,6 +182,10 @@ export const api = {
       },
     );
   },
+
+  // Chat
+  checkChatStatus: () =>
+    fetchJSON<{ available: boolean; message?: string }>("/api/chat/status"),
 };
 
 export interface PlatformStatus {
