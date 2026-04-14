@@ -14,6 +14,7 @@ import type { PlatformStatus, SessionInfo, StatusResponse } from "@/lib/api";
 import { timeAgo, isoTimeAgo } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DeviceManager } from "@/components/DeviceManager";
 import { useI18n } from "@/i18n";
 
 export default function StatusPage() {
@@ -235,6 +236,16 @@ export default function StatusPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Device pairing & management */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Devices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DeviceManager />
+        </CardContent>
+      </Card>
     </div>
   );
 }
