@@ -3255,7 +3255,13 @@ def _restore_stashed_changes(
         if input_fn is not None:
             response = input_fn("Restore local changes now? [Y/n]", "y")
         else:
-            response = input().strip().lower()
+            try:
+                response = input().strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                # stdin closed or Ctrl-C — skip restore so update completes.
+                # Stash is preserved for manual recovery.
+                print()
+                response = "n"
         if response not in ("", "y", "yes"):
             print("Skipped restoring local changes.")
             print("Your changes are still preserved in git stash.")
