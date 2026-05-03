@@ -83,7 +83,7 @@ Override rules beat the routing table:
 
 | Phase | Default route |
 |---|---|
-| GENERATING + SPECIFICITY=NONE | `../full-prompt-library.md` (constraint dispatch) |
+| GENERATING + SPECIFICITY=NONE | `../full-prompt-library.md` **General** section (constraint dispatch) |
 | GENERATING + DOMAIN known | route by domain (next table) |
 | EXPANDING | `methods/scamper.md` |
 | SELECTING | `methods/premortem-and-inversion.md` (or `methods/compression-progress.md` for upside) |
@@ -102,11 +102,14 @@ Override rules beat the routing table:
 | TEXT — narrative | `methods/story-skeletons.md` |
 | TEXT — has source material to remix | `methods/chance-and-remix.md` |
 | OBJECT (music, visual, performance) | `methods/oblique-strategies.md` |
+| OBJECT — physical maker / wants a starting constraint | `../full-prompt-library.md` **Physical / object** section |
+| ARTIFACT — wants a starting constraint | `../full-prompt-library.md` **Software / artifact** section |
 | ARTIFACT — engineering invention with parameter conflict | `methods/triz-principles.md` |
 | ARTIFACT — software architecture | `methods/pattern-languages.md` |
 | ARTIFACT — has natural-system analog | `methods/biomimicry.md` |
 | ARTIFACT — accumulated assumptions to question | `methods/first-principles.md` |
 | SYSTEM (civic, org, institutional) | `methods/leverage-points.md` |
+| SYSTEM — collective / participatory | `../full-prompt-library.md` **Social / collective** section |
 | SELF (life, career, what-to-study) | `methods/derive-and-mapping.md` |
 | RESEARCH — picking a question | `methods/compression-progress.md` |
 | RESEARCH — attacking a known problem | `methods/polya.md` |
@@ -153,7 +156,7 @@ For other methods, use the format the method specifies (TRIZ produces a contradi
 
 ## File map
 
-- `references/full-prompt-library.md` — constraint library (default path, fast)
+- `references/full-prompt-library.md` — constraint library, sectioned by domain (General, Software, Physical, Social, Lists). Default path for SPECIFICITY=NONE.
 - `references/method-catalog.md` — one-line summary + when-to-use per method
 - `references/heuristics.md` — extended decision tree for edge cases
 - `references/anti-slop.md` — anti-slop rules; apply to every output
