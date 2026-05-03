@@ -29,30 +29,107 @@ Any open-ended generative or selective question: "I want to make / build / write
 5. **Name the method you used and who invented it.** Attribution invokes the discipline.
 6. **When user picks one, build it.** Don't keep generating after they've chosen.
 
-## Routing
+## Routing — 4-step procedure
 
-Read the user's situation. Pick the path. Each path points to one or more files in `references/methods/`.
+Do this *before* generating any output. Routing failures produce slop.
 
-| Situation | Default method | Fallback |
-|---|---|---|
-| **No direction** ("I'm bored / inspire me / give me a project") | `../full-prompt-library.md` (random constraint) | `methods/oblique-strategies.md` (random card) |
-| **Stuck mid-project** ("blocked / stale / circles") | `methods/oblique-strategies.md` | `methods/defamiliarization.md`, `methods/creative-discipline.md` |
-| **Technical invention** ("X without Y / contradictory parameters") | `methods/triz-principles.md` | `methods/first-principles.md`, `methods/biomimicry.md` |
-| **Writing** (fiction, essay, poem, lyric, script) | `methods/oulipo.md` | `methods/story-skeletons.md`, `methods/chance-and-remix.md` |
-| **Idea too safe / obvious** | `methods/lateral-provocations.md` | `methods/pataphysics.md`, `methods/oblique-strategies.md` |
-| **Many ideas, need to pick** | `methods/premortem-and-inversion.md` | `methods/compression-progress.md` |
-| **Volume needed fast** | `methods/volume-generation.md` | `methods/scamper.md` |
-| **Systems / civic / org change** | `methods/leverage-points.md` | `methods/pattern-languages.md` |
-| **Research question / thesis** | `methods/compression-progress.md` | `methods/polya.md`, `methods/first-principles.md` |
-| **Personal / life decision** | `methods/derive-and-mapping.md` | `methods/premortem-and-inversion.md` |
-| **Visual art / installation / performance** | `methods/oblique-strategies.md` | `methods/chance-and-remix.md`, `methods/creative-discipline.md` (LeWitt) |
-| **Music / sound** | `methods/oblique-strategies.md` | `methods/chance-and-remix.md` |
-| **Product / business** | `methods/jobs-to-be-done.md` | `methods/premortem-and-inversion.md` |
-| **Wants a hard challenge** | `methods/compression-progress.md` (find simplest unsolved) | stack two methods from different rows |
-| **Pile of notes/quotes to synthesize** | `methods/affinity-diagrams.md` | — |
-| **Need to break a frame / find analogy** | `methods/analogy-and-blending.md` | `methods/lateral-provocations.md` |
+### Step 1 — Extract three signals from the prompt
 
-When in doubt, default to the constraint dispatch in `references/full-prompt-library.md`. It's the fastest path and works for the most common request.
+**PHASE** — what stage is the user in?
+
+| Phase | Cues |
+|---|---|
+| **GENERATING** | "give me an idea", "what should I make", "inspire me", no idea yet |
+| **EXPANDING** | "what else", "more like this", "give me variations" — has a base idea |
+| **SELECTING** | "help me pick", "which should I do", "I have these options" |
+| **UNBLOCKING** | "I'm stuck", "blocked", "going in circles", "stale" — has material |
+| **SUBVERTING** | "make it weirder", "less obvious", "this is too safe" |
+| **REFINING** | "this is fine but missing something", "feels rough" |
+| **SYNTHESIZING** | "I have a pile of notes / interviews / observations" |
+
+**DOMAIN** — what is the user making/doing?
+
+| Domain | Cues |
+|---|---|
+| **TEXT** | fiction, essay, poem, lyric, script, copy |
+| **OBJECT** | visual art, music, sound, performance, installation, sculpture |
+| **ARTIFACT** | software, hardware, mechanism, device |
+| **SYSTEM** | org, civic, institution, ecology, community |
+| **SELF** | life decision, career, personal practice |
+| **RESEARCH** | paper, thesis, scholarly question |
+| **PRODUCT** | business, market, service |
+
+**SPECIFICITY** — how much constraint is in the prompt?
+
+| Level | Cues |
+|---|---|
+| **NONE** | "I'm bored", "inspire me" — no domain, no project |
+| **DOMAIN** | "I want to write something" — knows the field, no project |
+| **PROJECT** | "I'm working on this specific X" |
+| **PROBLEM** | "I have this specific friction within X" |
+
+### Step 2 — Apply overrides (highest priority, fire first)
+
+Override rules beat the routing table:
+
+- **Mood signal** — user says "weird", "strange", "surprising", "less obvious", "more interesting" → `methods/lateral-provocations.md` or `methods/pataphysics.md`, regardless of domain.
+- **User names a method** — use it.
+- **User asks for a method recommendation** ("which method") → surface 2–3 candidates with one-line each, ask which to apply. Don't silently default.
+- **High-slop terrain** — "AI ideas", "startup ideas", "habit tracker", "productivity / wellness / fitness / food / travel app" → force `methods/lateral-provocations.md` or `methods/pataphysics.md` over the obvious method. Refuse the first **5** ideas, not 3.
+
+### Step 3 — Route by phase first, then domain
+
+**By phase (applies regardless of domain):**
+
+| Phase | Default route |
+|---|---|
+| GENERATING + SPECIFICITY=NONE | `../full-prompt-library.md` (constraint dispatch) |
+| GENERATING + DOMAIN known | route by domain (next table) |
+| EXPANDING | `methods/scamper.md` |
+| SELECTING | `methods/premortem-and-inversion.md` (or `methods/compression-progress.md` for upside) |
+| UNBLOCKING | `methods/oblique-strategies.md` |
+| SUBVERTING | `methods/lateral-provocations.md` (fallback `methods/pataphysics.md`) |
+| REFINING (text) | `methods/defamiliarization.md` |
+| REFINING (other) | `methods/creative-discipline.md` (Tharp's spine) |
+| SYNTHESIZING | `methods/affinity-diagrams.md` |
+| Volume needed fast | `methods/volume-generation.md` |
+
+**By domain (when GENERATING with DOMAIN known):**
+
+| Domain | Default route |
+|---|---|
+| TEXT — formal / poetry | `methods/oulipo.md` |
+| TEXT — narrative | `methods/story-skeletons.md` |
+| TEXT — has source material to remix | `methods/chance-and-remix.md` |
+| OBJECT (music, visual, performance) | `methods/oblique-strategies.md` |
+| ARTIFACT — engineering invention with parameter conflict | `methods/triz-principles.md` |
+| ARTIFACT — software architecture | `methods/pattern-languages.md` |
+| ARTIFACT — has natural-system analog | `methods/biomimicry.md` |
+| ARTIFACT — accumulated assumptions to question | `methods/first-principles.md` |
+| SYSTEM (civic, org, institutional) | `methods/leverage-points.md` |
+| SELF (life, career, what-to-study) | `methods/derive-and-mapping.md` |
+| RESEARCH — picking a question | `methods/compression-progress.md` |
+| RESEARCH — attacking a known problem | `methods/polya.md` |
+| PRODUCT (business, service) | `methods/jobs-to-be-done.md` |
+| Need to break a frame / find analogy | `methods/analogy-and-blending.md` |
+
+### Step 4 — Handle ambiguity and contradiction
+
+- **Multiple paths plausible** → pick the one closest to the user's actual phrasing. Don't pick the most interesting method to seem sophisticated.
+- **Genuinely ambiguous** → ask ONE clarifying question, don't silently guess. Examples: *"Are you generating ideas or picking between ones you have?"* / *"Is this for fiction, essay, or something else?"*
+- **Signals contradict** (e.g., "weird startup ideas" → product domain + weird mood) → **stack two methods explicitly**. State what you're doing: *"Using `jobs-to-be-done` for the product framing + `lateral-provocations` to break the obvious shape."*
+- **No match** → constraint dispatch (`../full-prompt-library.md`) is the safe fallback.
+- **Same question asked again** → switch methods. Variation in method = variation in idea distribution.
+
+### Anti-default check (run before generating)
+
+- About to write "Here are 5 ideas:" or a bare numbered list? → STOP. Pick a method first.
+- About to default to generic LLM-mode brainstorming? → STOP. Pick a path above.
+- Output looks like what an unrouted LLM would produce? → routing failed, redo.
+
+The default LLM mode is exactly what this skill exists to displace. If you generate without routing, you've defeated the skill.
+
+For deeper edge cases (mood signals, stacking, anti-patterns) see `references/heuristics.md`.
 
 ## Output format
 
