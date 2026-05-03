@@ -399,6 +399,7 @@ def _session_browse_picker(sessions: list) -> Optional[str]:
                 or q in (s.get("preview") or "").lower()
                 or q in s.get("id", "").lower()
                 or q in (s.get("source") or "").lower()
+                or q in (s.get("cwd") or "").lower()
             )
 
         def _curses_browse(stdscr):
@@ -9470,26 +9471,53 @@ Examples:
                 print("No sessions found.")
                 return
             has_titles = any(s.get("title") for s in sessions)
+            has_cwds = any(s.get("cwd") for s in sessions)
+
+            def _short_cwd(cwd_path, max_len=20):
+                """Shorten a cwd path for display (~/... form)."""
+                if not cwd_path:
+                    return ""
+                home = os.path.expanduser("~")
+                if cwd_path.startswith(home):
+                    cwd_path = "~" + cwd_path[len(home):]
+                if len(cwd_path) > max_len:
+                    return "…" + cwd_path[-(max_len - 1):]
+                return cwd_path
+
             if has_titles:
-                print(f"{'Title':<32} {'Preview':<40} {'Last Active':<13} {'ID'}")
-                print("─" * 110)
+                if has_cwds:
+                    print(f"{'Title':<28} {'Directory':<22} {'Preview':<28} {'Last Active':<13} {'ID'}")
+                    print("─" * 120)
+                else:
+                    print(f"{'Title':<32} {'Preview':<40} {'Last Active':<13} {'ID'}")
+                    print("─" * 110)
             else:
-                print(f"{'Preview':<50} {'Last Active':<13} {'Src':<6} {'ID'}")
-                print("─" * 95)
+                if has_cwds:
+                    print(f"{'Preview':<38} {'Directory':<22} {'Last Active':<13} {'Src':<6} {'ID'}")
+                    print("─" * 105)
+                else:
+                    print(f"{'Preview':<50} {'Last Active':<13} {'Src':<6} {'ID'}")
+                    print("─" * 95)
             for s in sessions:
                 last_active = _relative_time(s.get("last_active"))
-                preview = (
-                    s.get("preview", "")[:38]
-                    if has_titles
-                    else s.get("preview", "")[:48]
-                )
+                cwd_display = _short_cwd(s.get("cwd")) if has_cwds else ""
                 if has_titles:
-                    title = (s.get("title") or "—")[:30]
+                    title = (s.get("title") or "—")[:26]
                     sid = s["id"]
-                    print(f"{title:<32} {preview:<40} {last_active:<13} {sid}")
+                    if has_cwds:
+                        preview = s.get("preview", "")[:26]
+                        print(f"{title:<28} {cwd_display:<22} {preview:<28} {last_active:<13} {sid}")
+                    else:
+                        preview = s.get("preview", "")[:38]
+                        print(f"{title:<32} {preview:<40} {last_active:<13} {sid}")
                 else:
                     sid = s["id"]
-                    print(f"{preview:<50} {last_active:<13} {s['source']:<6} {sid}")
+                    if has_cwds:
+                        preview = s.get("preview", "")[:36]
+                        print(f"{preview:<38} {cwd_display:<22} {last_active:<13} {s['source']:<6} {sid}")
+                    else:
+                        preview = s.get("preview", "")[:48]
+                        print(f"{preview:<50} {last_active:<13} {s['source']:<6} {sid}")
 
         elif action == "export":
             if args.session_id:

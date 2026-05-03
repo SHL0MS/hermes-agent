@@ -4857,6 +4857,7 @@ class HermesCLI:
                             "max_iterations": self.max_turns,
                             "reasoning_config": self.reasoning_config,
                         },
+                        cwd=os.getcwd(),
                     )
                 except Exception:
                     pass
@@ -5015,6 +5016,7 @@ class HermesCLI:
                     "reasoning_config": self.reasoning_config,
                 },
                 parent_session_id=parent_session_id,
+                cwd=os.getcwd(),
             )
         except Exception as e:
             _cprint(f"  Failed to create branch session: {e}")

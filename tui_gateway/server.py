@@ -1626,7 +1626,7 @@ def _(rid, params: dict) -> dict:
 
             db = _get_db()
             if db is not None:
-                db.create_session(key, source="tui", model=_resolve_model())
+                db.create_session(key, source="tui", model=_resolve_model(), cwd=os.getcwd())
                 pending_title = (session.get("pending_title") or "").strip()
                 if pending_title:
                     try:
@@ -2052,7 +2052,8 @@ def _(rid, params: dict) -> dict:
                 else f"{current} (branch)"
             )
         db.create_session(
-            new_key, source="tui", model=_resolve_model(), parent_session_id=old_key
+            new_key, source="tui", model=_resolve_model(), parent_session_id=old_key,
+            cwd=os.getcwd(),
         )
         for msg in history:
             db.append_message(

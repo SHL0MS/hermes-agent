@@ -1575,6 +1575,7 @@ class AIAgent:
                     },
                     user_id=None,
                     parent_session_id=self._parent_session_id,
+                    cwd=os.getcwd(),
                 )
             except Exception as e:
                 # Transient SQLite lock contention (e.g. CLI and gateway writing
@@ -8485,6 +8486,7 @@ class AIAgent:
                     source=self.platform or os.environ.get("HERMES_SESSION_SOURCE", "cli"),
                     model=self.model,
                     parent_session_id=old_session_id,
+                    cwd=os.getcwd(),
                 )
                 # Auto-number the title for the continuation session
                 if old_title:
