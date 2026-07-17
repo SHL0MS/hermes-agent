@@ -328,7 +328,12 @@ CAN be removed at the source — hide their components before the shoot
 For multi-frame virtual-camera moves (orbits, cranes) drive
 `CaptureViewport` in a loop from ONE MCP session, strictly serial (the
 game thread renders each), and write frames idempotently
-(skip-if-exists) so a killed run resumes where it stopped. Budget
+(skip-if-exists) so a killed run resumes where it stopped. On Hermes
+specifically, launch the capture loop fully detached (double-fork +
+os.setsid daemon writing a pidfile + log; verified) — tracked background
+terminal children can receive session-cleanup SIGTERM mid-run, and an
+hour-long capture will not survive it. Pair the daemon with a disposable
+frame-count watcher for completion notification. Budget
 realistically: ~15-20 s/frame at editor resolution on a laptop — a 240-frame
 10 s @ 24 fps shot is roughly an hour. Smoothstep-ease camera parameters;
 constant angular velocity reads mechanical. Remove the VolumetricCloud
