@@ -105,10 +105,15 @@ FAL_IMAGE_MODELS: List[Dict[str, Any]] = [
         "modality": "image",
         "tier": "quality",
         "payload_style": "aspect",
-        "supports": {"aspect_ratio": True, "resolution": True, "seed": True},
+        "edit_endpoint": "fal-ai/nano-banana-pro/edit",
+        "edit_requires_key": True,
+        "supports": {"aspect_ratio": True, "resolution": True, "seed": True, "image_url": True},
         "aspect_ratios": _NANO_ASPECTS,
         "resolutions": ["1K", "2K", "4K"],
-        "note": "Gemini 3 Pro Image — best-in-class typography. 4K costs ~2x.",
+        "note": (
+            "Gemini 3 Pro Image — best-in-class typography. 4K costs ~2x. Edits aren't "
+            "priced on the portal gateway yet (needs FAL_KEY, or Krea's NBP)."
+        ),
     },
     {
         "id": "fal-ai/nano-banana-2",
@@ -704,6 +709,15 @@ class FalAdapter:
         if image_url and style != "clarity":
             edit = model.get("edit_endpoint")
             if edit:
+                # NBP's edit endpoint exists on fal but has no gateway pricing
+                # rule yet — a managed submit dies in billing. Fail fast with
+                # the real alternatives instead.
+                if model.get("edit_requires_key") and not self._direct_key():
+                    raise MediaProviderError(
+                        f"{model['display']} edits aren't priced on the portal gateway yet. "
+                        "Use Nano Banana 2 for edits, add FAL_KEY for direct fal billing, "
+                        "or use Nano Banana Pro (Krea) with a Krea API key."
+                    )
                 endpoint = edit
                 payload["image_urls"] = [image_url]
                 # Edit endpoints reject text-to-image sizing params.
@@ -929,10 +943,10 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "modality": "image",
         "tier": "quality",
         "path": "/generate/image/google/nano-banana-pro",
-        "supports": {"aspect_ratio": True, "resolution": True},
+        "supports": {"aspect_ratio": True, "resolution": True, "image_url": True},
         "aspect_ratios": ["21:9", "1:1", "4:3", "3:2", "2:3", "5:4", "4:5", "3:4", "16:9", "9:16"],
         "resolutions": ["1K", "2K", "4K"],
-        "note": "Needs a Krea API key (separate wallet) — also on fal via portal credits.",
+        "note": "Needs a Krea API key (separate wallet). Takes an input image here — also on fal via portal credits (text-only).",
     },
     {
         "id": "kling/kling-2.5",
@@ -1090,6 +1104,13 @@ class KreaAdapter:
             if model["id"].startswith("krea/"):
                 # krea-2's schema requires resolution and only accepts 1K.
                 body["resolution"] = "1K"
+            # Krea's image schemas take image prompts as image_urls[] (data
+            # URIs accepted) — NBP edit-style input rides this.
+            input_image = (
+                normalize_image_input(params.get("image_url")) if supports.get("image_url") else None
+            )
+            if input_image:
+                body["image_urls"] = [input_image]
         else:
             if supports.get("duration") and params.get("duration"):
                 body["duration"] = int(params["duration"])

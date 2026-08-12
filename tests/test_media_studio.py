@@ -362,6 +362,14 @@ def test_krea_nano_banana_pro_forwards_resolution(monkeypatch):
     )
     assert captured["body"]["resolution"] == "1K"
 
+    # NBP via Krea takes an input image as image_urls[] (edit-style).
+    adapter.submit(
+        "google/nano-banana-pro",
+        "image",
+        {"prompt": "restyle", "image_url": "data:image/png;base64,aWM="},
+    )
+    assert captured["body"]["image_urls"] == ["data:image/png;base64,aWM="]
+
 
 def test_krea_routes_managed_vs_direct(monkeypatch):
     """Subscriber (no key): krea-2 rides the managed gateway and the job ref
@@ -446,7 +454,7 @@ def test_fal_nano_banana_pro_payload_uses_aspect_ratio_style():
     assert "aspect_ratio" not in flux_payload
 
 
-def test_fal_payload_styles_match_harvested_schemas():
+def test_fal_payload_styles_match_harvested_schemas(monkeypatch):
     """One assertion per payload family, pinned to the fal OpenAPI dumps."""
     providers_mod = _load("providers")
     adapter = providers_mod.FalAdapter()
@@ -489,6 +497,18 @@ def test_fal_payload_styles_match_harvested_schemas():
 
     with _pytest.raises(providers_mod.MediaProviderError):
         adapter._payload(clarity, "image", {"prompt": "no image"})
+
+    # Nano Banana Pro: edit endpoint exists on fal but is NOT gateway-priced
+    # (probed live 2026-08-12: BILLING_ERROR unsupported_pricing_meter). With
+    # a FAL_KEY it routes; without one it fails fast with alternatives.
+    nbp = adapter._model("fal-ai/nano-banana-pro")
+    monkeypatch.setattr(adapter, "_direct_key", lambda: "fal-key")
+    endpoint, p = adapter._payload(nbp, "image", {"prompt": "edit", "image_url": tiny_png})
+    assert endpoint == "fal-ai/nano-banana-pro/edit"
+    assert p["image_urls"] == [tiny_png]
+    monkeypatch.setattr(adapter, "_direct_key", lambda: None)
+    with _pytest.raises(providers_mod.MediaProviderError, match="portal gateway"):
+        adapter._payload(nbp, "image", {"prompt": "edit", "image_url": tiny_png})
 
     # Veo: duration takes an s-suffix string.
     veo = adapter._model("veo3.1")
