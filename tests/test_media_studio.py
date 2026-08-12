@@ -200,6 +200,48 @@ def test_import_file_and_known_paths_dedupe(store, tmp_path):
     assert len(jobs) == 1 and jobs[0]["source"] == "agent"
 
 
+def test_agent_indexer_imports_settled_files_only(store, tmp_path, monkeypatch):
+    """Chat generations land while the app runs: the indexer imports settled
+    files, skips studio materializations, mid-download files (fresh mtime,
+    zero size), and already-known paths — and it is re-runnable (live rescan),
+    picking up files that arrive between passes."""
+    import os as _os
+
+    api = _load("plugin_api")
+    home = tmp_path / "hermes"
+    (home / "cache" / "images").mkdir(parents=True)
+    (home / "cache" / "videos").mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setattr(api._engine_mod, "make_thumbnail", lambda *_: None)
+
+    old = time.time() - 60
+    settled = home / "cache" / "images" / "image_20260812_010101_aaaa.png"
+    settled.write_bytes(b"png")
+    _os.utime(settled, (old, old))
+
+    studio = home / "cache" / "images" / "studio_fal_x.png"
+    studio.write_bytes(b"png")
+    _os.utime(studio, (old, old))
+
+    fresh = home / "cache" / "images" / "image_downloading.png"
+    fresh.write_bytes(b"partial")  # mtime = now -> quiescence skip
+
+    empty = home / "cache" / "videos" / "video_zero.mp4"
+    empty.write_bytes(b"")
+    _os.utime(empty, (old, old))
+
+    assert api._index_agent_media(store) == 1
+    paths = store.known_result_paths()
+    assert str(settled) in paths
+    assert str(studio) not in paths and str(fresh) not in paths and str(empty) not in paths
+
+    # Second pass: nothing new -> 0; then a file settles -> picked up.
+    assert api._index_agent_media(store) == 0
+    _os.utime(fresh, (old, old))
+    assert api._index_agent_media(store) == 1
+    assert str(fresh) in store.known_result_paths()
+
+
 # ---------------------------------------------------------------------------
 # Batch fan-out (POST /jobs count=N) — route-level contract
 # ---------------------------------------------------------------------------

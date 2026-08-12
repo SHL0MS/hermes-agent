@@ -1,0 +1,12 @@
+name: media-studio
+version: 0.1.0
+description: "Media Studio — generative media workspace for Hermes Desktop: create panel, durable job queue, and library for image/video generation (fal + Krea)."
+author: "SHL0MS, Nous Research"
+# Both live surfaces are discovered elsewhere:
+#   - backend:  dashboard/manifest.json -> FastAPI router mounted by the
+#     dashboard plugin system at /api/plugins/media-studio (requires this
+#     plugin in `plugins.enabled` — user-plugin Python is allow-listed)
+#   - frontend: the built plugin.js installed under
+#     ~/.hermes/desktop-plugins/media-studio/ (runtime plugin door)
+# This manifest exists so `hermes plugins enable media-studio` has a plugin
+# to resolve; register() is a no-op.

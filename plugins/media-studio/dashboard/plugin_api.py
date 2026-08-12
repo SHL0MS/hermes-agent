@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -79,6 +80,12 @@ _store: Any = None
 _engine: Any = None
 _indexed_once = False
 _state_lock = None
+# Live rescan throttle: chat generations land while the backend runs, so the
+# boot-time pass alone strands anything generated after startup (until the
+# next restart). list_jobs re-scans at most once per interval.
+_INDEX_INTERVAL_S = 10.0
+_last_index_at = 0.0
+_index_lock = threading.Lock()
 
 
 def _ensure_engine():
@@ -103,6 +110,31 @@ def _ensure_engine():
     return _engine
 
 
+def _index_agent_media_throttled() -> None:
+    """Cheap periodic rescan so chat generations appear while the app runs.
+
+    Serialized and throttled: the winning caller pays one directory listing
+    plus thumbnails for NEW files only; every other caller inside the
+    interval returns immediately. Never raises into the request path.
+    """
+    global _last_index_at
+    if time.monotonic() - _last_index_at < _INDEX_INTERVAL_S:
+        return
+    if not _index_lock.acquire(blocking=False):
+        return  # another request is already scanning
+    try:
+        if time.monotonic() - _last_index_at < _INDEX_INTERVAL_S:
+            return
+        _last_index_at = time.monotonic()
+        imported = _index_agent_media(_store)
+        if imported:
+            logger.info("media-studio: indexed %d new agent media file(s)", imported)
+    except Exception:  # noqa: BLE001 — indexing must never break /jobs
+        logger.exception("media-studio: live agent media indexing failed")
+    finally:
+        _index_lock.release()
+
+
 # ---------------------------------------------------------------------------
 # Agent-output indexing: pick up files the agent's own image/video tools
 # materialized under $HERMES_HOME/cache/{images,videos}, so chat generations
@@ -111,6 +143,11 @@ def _ensure_engine():
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 _VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv"}
+# The agent's save_url_* helpers stream straight to the final path (no
+# tmp+rename), so a file whose mtime is very fresh may still be mid-write.
+# Its mtime advances with every chunk; once it has been quiet this long we
+# trust it. Costs the same in added latency, nothing more.
+_QUIESCENCE_S = 5.0
 
 
 def _index_agent_media(store) -> int:
@@ -119,6 +156,7 @@ def _index_agent_media(store) -> int:
     cache = get_hermes_home() / "cache"
     known = store.known_result_paths()
     imported = 0
+    now = time.time()
     for sub, exts, modality in (("images", _IMAGE_EXTS, "image"), ("videos", _VIDEO_EXTS, "video")):
         directory = cache / sub
         if not directory.is_dir():
@@ -134,6 +172,12 @@ def _index_agent_media(store) -> int:
             # under source=agent with the file's mtime as its timestamp.
             if path.name.startswith("studio_"):
                 continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            if stat.st_size == 0 or now - stat.st_mtime < _QUIESCENCE_S:
+                continue  # likely still downloading — next pass gets it
             thumb = _engine_mod.make_thumbnail(path, modality)
             store.import_file(
                 provider="agent",
@@ -142,7 +186,7 @@ def _index_agent_media(store) -> int:
                 result_path=resolved,
                 thumb_path=thumb,
                 source="agent",
-                created_at=path.stat().st_mtime,
+                created_at=stat.st_mtime,
             )
             imported += 1
     return imported
@@ -280,6 +324,10 @@ def list_jobs(
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     _ensure_engine()
+    # Fold in anything the agent's chat tools materialized since the last
+    # look (throttled; no-op within the interval). The UI polls /jobs every
+    # few seconds, so chat generations appear near-live without a watcher.
+    _index_agent_media_throttled()
     states = [s.strip() for s in state.split(",") if s.strip()] if state else None
     jobs = _store.list_jobs(states=states, modality=modality, provider=provider, limit=limit, offset=offset)
     return {"jobs": jobs, "cursor": _store.last_event_seq()}
