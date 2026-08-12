@@ -54,6 +54,13 @@ type StudioMessages = {
   agentSource: string
   jobCount: (n: number) => string
   errorSubmit: string
+  paletteOpen: string
+  paletteAttachLatest: string
+  attachMenuLatest: string
+  attachLatestEmpty: string
+  notifDone: string
+  notifFailed: string
+  notifView: string
 }
 
 const en: StudioMessages = {
@@ -102,7 +109,14 @@ const en: StudioMessages = {
   notConfigured: 'Not configured',
   agentSource: 'Agent',
   jobCount: n => (n === 1 ? '1 job' : `${n} jobs`),
-  errorSubmit: 'Generation failed to submit'
+  errorSubmit: 'Generation failed to submit',
+  paletteOpen: 'Media Studio: Open',
+  paletteAttachLatest: 'Media Studio: Attach latest generation to chat',
+  attachMenuLatest: 'Latest generation',
+  attachLatestEmpty: 'No finished generation yet.',
+  notifDone: 'Generation complete',
+  notifFailed: 'Generation failed',
+  notifView: 'View'
 }
 
 const ja: StudioMessages = {
@@ -151,7 +165,14 @@ const ja: StudioMessages = {
   notConfigured: '未設定',
   agentSource: 'エージェント',
   jobCount: n => `${n}件のジョブ`,
-  errorSubmit: '生成の送信に失敗しました'
+  errorSubmit: '生成の送信に失敗しました',
+  paletteOpen: 'メディアスタジオ: 開く',
+  paletteAttachLatest: 'メディアスタジオ: 最新の生成をチャットに添付',
+  attachMenuLatest: '最新の生成',
+  attachLatestEmpty: '完了した生成はまだありません。',
+  notifDone: '生成が完了しました',
+  notifFailed: '生成に失敗しました',
+  notifView: '表示'
 }
 
 const zh: StudioMessages = {
@@ -200,7 +221,14 @@ const zh: StudioMessages = {
   notConfigured: '未配置',
   agentSource: '智能体',
   jobCount: n => `${n} 个任务`,
-  errorSubmit: '生成提交失败'
+  errorSubmit: '生成提交失败',
+  paletteOpen: '媒体工作室: 打开',
+  paletteAttachLatest: '媒体工作室: 将最新生成附加到聊天',
+  attachMenuLatest: '最新生成',
+  attachLatestEmpty: '还没有完成的生成。',
+  notifDone: '生成完成',
+  notifFailed: '生成失败',
+  notifView: '查看'
 }
 
 const zhHant: StudioMessages = {
@@ -249,7 +277,14 @@ const zhHant: StudioMessages = {
   notConfigured: '未設定',
   agentSource: '智慧代理',
   jobCount: n => `${n} 個任務`,
-  errorSubmit: '生成提交失敗'
+  errorSubmit: '生成提交失敗',
+  paletteOpen: '媒體工作室: 開啟',
+  paletteAttachLatest: '媒體工作室: 將最新生成附加到聊天',
+  attachMenuLatest: '最新生成',
+  attachLatestEmpty: '還沒有完成的生成。',
+  notifDone: '生成完成',
+  notifFailed: '生成失敗',
+  notifView: '檢視'
 }
 
 export const STUDIO_LOCALES: PluginLocaleBundles = { en, ja, zh, 'zh-hant': zhHant }

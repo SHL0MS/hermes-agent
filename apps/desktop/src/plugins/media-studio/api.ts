@@ -57,6 +57,19 @@ type Socket = (path: string, onMessage: (data: unknown) => void) => () => void
 
 let rest: null | Rest = null
 
+/** Terminal transitions observed on the live events socket. Socket frames
+ *  start at the store's current seq (no history replay), so every callback
+ *  invocation is a job finishing NOW — safe to surface as a notification. */
+type TerminalListener = (jobId: string, state: 'done' | 'failed') => void
+
+const terminalListeners = new Set<TerminalListener>()
+
+export function onJobTerminal(listener: TerminalListener): () => void {
+  terminalListeners.add(listener)
+
+  return () => terminalListeners.delete(listener)
+}
+
 export const PROVIDERS_KEY = ['media-studio', 'providers'] as const
 export const JOBS_KEY = ['media-studio', 'jobs'] as const
 
@@ -72,10 +85,22 @@ export function bindApi(r: Rest, socket: Socket): () => void {
   rest = r
 
   const close = socket('/events', data => {
-    const events = (data as { events?: Array<{ job_id?: string }> })?.events
+    const events = (data as { events?: Array<{ job_id?: string; payload?: { state?: string } }> })?.events
 
-    if (events?.length) {
-      void queryClient.invalidateQueries({ queryKey: JOBS_KEY })
+    if (!events?.length) {
+      return
+    }
+
+    void queryClient.invalidateQueries({ queryKey: JOBS_KEY })
+
+    for (const event of events) {
+      const state = event.payload?.state
+
+      if (event.job_id && (state === 'done' || state === 'failed')) {
+        for (const listener of terminalListeners) {
+          listener(event.job_id, state)
+        }
+      }
     }
   })
 
@@ -95,6 +120,23 @@ export function fetchProviders(): Promise<{ providers: ProviderInfo[] }> {
 
 export function fetchJobs(): Promise<{ jobs: MediaJob[] }> {
   return call('/jobs?limit=400')
+}
+
+export function fetchJob(id: string): Promise<{ job: MediaJob }> {
+  return call(`/jobs/${encodeURIComponent(id)}`)
+}
+
+/** Newest completed generation with a materialized file, newest first.
+ *  Optionally constrained to one modality. */
+export async function latestResult(modality?: 'image' | 'video'): Promise<MediaJob | null> {
+  const { jobs } = await fetchJobs()
+
+  return (
+    jobs
+      .filter(job => job.state === 'done' && job.result_paths.length > 0)
+      .filter(job => !modality || job.modality === modality)
+      .sort((a, b) => b.created_at - a.created_at)[0] ?? null
+  )
 }
 
 export function submitJob(body: SubmitBody): Promise<{ job: MediaJob }> {
