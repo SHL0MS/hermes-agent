@@ -83,6 +83,13 @@ export function isTerminal(state: JobState): boolean {
   return TERMINAL_STATES.includes(state)
 }
 
+/** Whether the host app ships the `host.attachFileToComposer` SDK door
+ *  (NousResearch/hermes-agent#84209). On older apps the send-to-chat
+ *  affordances hide; everything else works. */
+export function canAttachToComposer(hostLike: unknown): boolean {
+  return typeof (hostLike as { attachFileToComposer?: unknown })?.attachFileToComposer === 'function'
+}
+
 /** Bind the plugin doors at register time; returns the disposer the host
  *  runs on unload/disable (socket closed, rest unbound). */
 export function bindApi(r: Rest, socket: Socket): () => void {

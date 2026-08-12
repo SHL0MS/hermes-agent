@@ -33,7 +33,16 @@ import {
   useQuery
 } from '@hermes/plugin-sdk'
 
-import { bindApi, fetchJob, fetchJobs, isTerminal, JOBS_KEY, latestResult, onJobTerminal } from './api'
+import {
+  bindApi,
+  canAttachToComposer,
+  fetchJob,
+  fetchJobs,
+  isTerminal,
+  JOBS_KEY,
+  latestResult,
+  onJobTerminal
+} from './api'
 import { STUDIO_LOCALES, useStudio } from './i18n'
 import { MediaStudioPage } from './page'
 
@@ -80,6 +89,9 @@ const plugin: HermesPlugin = {
     const t = (key: string) => ctx.i18n.t(key)
 
     const openStudio = () => host.navigate('/media')
+    // Older host apps predate the attachFileToComposer SDK door — hide the
+    // send-to-chat affordances there instead of throwing at click time.
+    const hasComposerDoor = canAttachToComposer(host)
 
     /** Stage the newest finished generation onto the chat composer. */
     const attachLatest = async () => {
@@ -149,15 +161,19 @@ const plugin: HermesPlugin = {
         order: 30,
         render: () => <StudioCount />
       },
-      {
-        id: 'attach-latest',
-        area: COMPOSER_AREAS.attachments,
-        data: {
-          icon: 'sparkle',
-          label: t('attachMenuLatest'),
-          run: () => void attachLatest()
-        } satisfies ComposerAttachmentProvider
-      },
+      ...(hasComposerDoor
+        ? [
+            {
+              id: 'attach-latest',
+              area: COMPOSER_AREAS.attachments,
+              data: {
+                icon: 'sparkle',
+                label: t('attachMenuLatest'),
+                run: () => void attachLatest()
+              } satisfies ComposerAttachmentProvider
+            }
+          ]
+        : []),
       {
         id: 'open',
         area: PALETTE_AREA,
@@ -169,16 +185,20 @@ const plugin: HermesPlugin = {
           run: openStudio
         } satisfies PaletteContribution
       },
-      {
-        id: 'attach-latest-palette',
-        area: PALETTE_AREA,
-        data: {
-          id: 'media-studio.attachLatest',
-          keywords: ['media', 'attach', 'generation', 'chat', 'image', 'video'],
-          label: t('paletteAttachLatest'),
-          run: () => void attachLatest()
-        } satisfies PaletteContribution
-      },
+      ...(hasComposerDoor
+        ? [
+            {
+              id: 'attach-latest-palette',
+              area: PALETTE_AREA,
+              data: {
+                id: 'media-studio.attachLatest',
+                keywords: ['media', 'attach', 'generation', 'chat', 'image', 'video'],
+                label: t('paletteAttachLatest'),
+                run: () => void attachLatest()
+              } satisfies PaletteContribution
+            }
+          ]
+        : []),
       {
         id: 'open-keybind',
         area: KEYBINDS_AREA,

@@ -32,6 +32,7 @@ import {
 import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  canAttachToComposer,
   cancelJob,
   clearProviderKey,
   deleteJob,
@@ -674,7 +675,7 @@ const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) 
 const LibraryCard: FC<{
   job: MediaJob
   onOpen: (job: MediaJob) => void
-  onSendToChat: (job: MediaJob) => void
+  onSendToChat: null | ((job: MediaJob) => void)
   onUseAsInput: (job: MediaJob) => void
   onRemove: (id: string) => void
   onRetry: (job: MediaJob) => void
@@ -735,11 +736,13 @@ const LibraryCard: FC<{
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-0.5 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
         {!failed && job.result_paths[0] && (
           <>
-            <Tip label={k.sendToChat}>
-              <Button className="text-white" onClick={() => onSendToChat(job)} size="icon-sm" variant="ghost">
-                <Codicon name="comment" />
-              </Button>
-            </Tip>
+            {onSendToChat && (
+              <Tip label={k.sendToChat}>
+                <Button className="text-white" onClick={() => onSendToChat(job)} size="icon-sm" variant="ghost">
+                  <Codicon name="comment" />
+                </Button>
+              </Tip>
+            )}
             {job.modality === 'image' && (
               <Tip label={k.useAsInput}>
                 <Button className="text-white" onClick={() => onUseAsInput(job)} size="icon-sm" variant="ghost">
@@ -814,7 +817,7 @@ export const MediaStudioPage: FC = () => {
     }).then(invalidateJobs)
   }, [])
 
-  const onSendToChat = useCallback((job: MediaJob) => {
+  const sendToChat = useCallback((job: MediaJob) => {
     const path = job.result_paths[0]
 
     if (!path) {
@@ -827,6 +830,9 @@ export const MediaStudioPage: FC = () => {
       }
     })
   }, [])
+
+  // Hidden (not broken) on host apps that predate the SDK door.
+  const onSendToChat = canAttachToComposer(host) ? sendToChat : null
 
   const onUseAsInput = useCallback((job: MediaJob) => {
     const path = job.result_paths[0]
