@@ -25,6 +25,8 @@ export interface ProviderInfo {
   available: boolean
   hint: string
   models: ModelInfo[]
+  /** Env var this provider's BYOK key lands in; null → not keyable here. */
+  key_var?: null | string
 }
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'expired'
@@ -118,6 +120,14 @@ function call<T>(path: string, opts?: PluginRestOptions): Promise<T> {
 
 export function fetchProviders(): Promise<{ providers: ProviderInfo[] }> {
   return call('/providers')
+}
+
+export function setProviderKey(provider: string, key: string): Promise<{ ok: boolean; available: boolean }> {
+  return call(`/providers/${encodeURIComponent(provider)}/key`, { body: { key }, method: 'PUT' })
+}
+
+export function clearProviderKey(provider: string): Promise<{ ok: boolean; available: boolean }> {
+  return call(`/providers/${encodeURIComponent(provider)}/key`, { method: 'DELETE' })
 }
 
 export function fetchJobs(): Promise<{ jobs: MediaJob[] }> {

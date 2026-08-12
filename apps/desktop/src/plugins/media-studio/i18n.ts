@@ -66,6 +66,12 @@ type StudioMessages = {
   parameters: string
   copyPrompt: string
   copiedPrompt: string
+  keyLabel: string
+  keyPlaceholder: string
+  keySave: string
+  keySaved: string
+  keyRemove: string
+  keyGetAt: (host: string) => string
 }
 
 const en: StudioMessages = {
@@ -126,7 +132,13 @@ const en: StudioMessages = {
   countCustom: 'Custom',
   parameters: 'Parameters',
   copyPrompt: 'Copy prompt',
-  copiedPrompt: 'Prompt copied'
+  copiedPrompt: 'Prompt copied',
+  keyLabel: 'API key',
+  keyPlaceholder: 'Paste API key…',
+  keySave: 'Save key',
+  keySaved: 'Key saved — provider is live',
+  keyRemove: 'Remove key',
+  keyGetAt: host => `Create one at ${host}`
 }
 
 const ja: StudioMessages = {
@@ -187,7 +199,13 @@ const ja: StudioMessages = {
   countCustom: 'カスタム',
   parameters: 'パラメータ',
   copyPrompt: 'プロンプトをコピー',
-  copiedPrompt: 'プロンプトをコピーしました'
+  copiedPrompt: 'プロンプトをコピーしました',
+  keyLabel: 'APIキー',
+  keyPlaceholder: 'APIキーを貼り付け…',
+  keySave: 'キーを保存',
+  keySaved: 'キーを保存しました — プロバイダーが利用可能になりました',
+  keyRemove: 'キーを削除',
+  keyGetAt: host => `${host} で作成できます`
 }
 
 const zh: StudioMessages = {
@@ -248,7 +266,13 @@ const zh: StudioMessages = {
   countCustom: '自定义',
   parameters: '参数',
   copyPrompt: '复制提示词',
-  copiedPrompt: '已复制提示词'
+  copiedPrompt: '已复制提示词',
+  keyLabel: 'API 密钥',
+  keyPlaceholder: '粘贴 API 密钥…',
+  keySave: '保存密钥',
+  keySaved: '密钥已保存 — 提供商已可用',
+  keyRemove: '删除密钥',
+  keyGetAt: host => `在 ${host} 创建`
 }
 
 const zhHant: StudioMessages = {
@@ -309,7 +333,13 @@ const zhHant: StudioMessages = {
   countCustom: '自訂',
   parameters: '參數',
   copyPrompt: '複製提示詞',
-  copiedPrompt: '已複製提示詞'
+  copiedPrompt: '已複製提示詞',
+  keyLabel: 'API 金鑰',
+  keyPlaceholder: '貼上 API 金鑰…',
+  keySave: '儲存金鑰',
+  keySaved: '金鑰已儲存 — 供應商已可用',
+  keyRemove: '刪除金鑰',
+  keyGetAt: host => `在 ${host} 建立`
 }
 
 export const STUDIO_LOCALES: PluginLocaleBundles = { en, ja, zh, 'zh-hant': zhHant }

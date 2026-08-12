@@ -25,6 +25,7 @@ import importlib
 import importlib.util
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -160,6 +161,20 @@ class SubmitBody(BaseModel):
     count: int = Field(1, ge=1, le=50, description="fan out N identical jobs (seed varied per job)")
 
 
+class ProviderKeyBody(BaseModel):
+    key: str = Field(min_length=1, max_length=512)
+
+
+# BYOK: which providers accept a pasted key, and which env var it lands in.
+# Server-side allow-list — the client never chooses the env var name. fal is
+# deliberately absent: subscribers ride the managed gateway; direct FAL_KEY
+# setup stays in `hermes setup tools` where its interaction with the gateway
+# is explained.
+PROVIDER_KEY_VARS: Dict[str, str] = {
+    "krea": "KREA_API_KEY",
+}
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -199,9 +214,56 @@ def provider_catalog() -> Dict[str, Any]:
                 "available": available,
                 "hint": adapter.availability_hint(),
                 "models": adapter.catalog(),
+                "key_var": PROVIDER_KEY_VARS.get(name),
             }
         )
     return {"providers": out}
+
+
+@router.put("/providers/{provider}/key")
+def set_provider_key(provider: str, body: ProviderKeyBody) -> Dict[str, Any]:
+    """BYOK: store a provider API key in ~/.hermes/.env and make it live in
+    this process. Allow-listed providers only; the value is never echoed."""
+    env_var = PROVIDER_KEY_VARS.get(provider)
+    if env_var is None:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider}' does not take a key here")
+    key = body.key.strip()
+    if not key or any(c in key for c in "\r\n"):
+        raise HTTPException(status_code=400, detail="Invalid key")
+    try:
+        from hermes_cli.config import save_env_value
+
+        save_env_value(env_var, key)
+    except Exception as exc:  # noqa: BLE001 — managed installs raise here
+        raise HTTPException(status_code=400, detail=f"Could not save key: {exc}")
+    # .env is read at process start — export for THIS process so the adapter
+    # sees it without a backend restart.
+    os.environ[env_var] = key
+    engine = _ensure_engine()
+    adapter = engine.providers.get(provider)
+    available = False
+    if adapter is not None:
+        try:
+            available = bool(adapter.is_available())
+        except Exception:  # noqa: BLE001
+            available = False
+    return {"ok": True, "available": available}
+
+
+@router.delete("/providers/{provider}/key")
+def clear_provider_key(provider: str) -> Dict[str, Any]:
+    """Remove a BYOK provider key from ~/.hermes/.env and this process."""
+    env_var = PROVIDER_KEY_VARS.get(provider)
+    if env_var is None:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider}' does not take a key here")
+    try:
+        from hermes_cli.config import remove_env_value
+
+        remove_env_value(env_var)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Could not remove key: {exc}")
+    os.environ.pop(env_var, None)
+    return {"ok": True, "available": False}
 
 
 @router.get("/jobs")

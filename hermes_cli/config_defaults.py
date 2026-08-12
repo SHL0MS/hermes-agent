@@ -3831,10 +3831,10 @@ OPTIONAL_ENV_VARS = {
         "category": "tool",
     },
     "KREA_API_KEY": {
-        "description": "Krea API key for Krea 2 image generation (Medium + Large)",
+        "description": "Krea API key for image/video generation (Krea 2, Nano Banana Pro, Kling, Hailuo)",
         "prompt": "Krea API key",
         "url": "https://www.krea.ai/settings/api-tokens",
-        "tools": ["image_generate"],
+        "tools": ["image_generate", "media_studio"],
         "password": True,
         "category": "tool",
     },

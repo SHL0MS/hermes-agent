@@ -26,12 +26,14 @@ import {
   Textarea,
   Tip,
   useMutation,
-  useQuery
+  useQuery,
+  useQueryClient
 } from '@hermes/plugin-sdk'
 import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   cancelJob,
+  clearProviderKey,
   deleteJob,
   fetchJobs,
   fetchProviders,
@@ -44,6 +46,7 @@ import {
   type ModelInfo,
   type ProviderInfo,
   PROVIDERS_KEY,
+  setProviderKey,
   type SubmitBody,
   submitJob
 } from './api'
@@ -123,6 +126,81 @@ interface CreateState {
 const COUNT_PRESETS = [1, 2, 4] as const
 const COUNT_CUSTOM = 'custom'
 const MAX_COUNT = 50
+
+/** BYOK: paste-a-key form shown when an unavailable provider declares a
+ *  key_var. Saves through the plugin API (lands in ~/.hermes/.env), then
+ *  refetches the catalog so the form flips to available in place. */
+const ProviderKeyForm: FC<{ provider: ProviderInfo }> = ({ provider }) => {
+  const k = useStudio()
+  const queryClient = useQueryClient()
+  const [key, setKey] = useState('')
+
+  const save = useMutation({
+    mutationFn: () => setProviderKey(provider.name, key.trim()),
+    onError: (error: unknown) => {
+      host.notify({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    },
+    onSuccess: result => {
+      setKey('')
+      host.notify({ kind: result.available ? 'success' : 'warning', message: k.keySaved })
+      void queryClient.invalidateQueries({ queryKey: PROVIDERS_KEY })
+    }
+  })
+
+  // The provider hint carries the console URL (e.g. krea.ai/settings/api-tokens);
+  // surface it as-is under the input.
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md bg-(--ui-bg-tertiary) px-3 py-2">
+      <span className="text-[0.6875rem] text-(--ui-text-secondary)">{provider.hint}</span>
+      <div className="flex items-center gap-2">
+        <Input
+          className="h-8 flex-1"
+          onChange={event => setKey(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && key.trim()) {
+              event.preventDefault()
+              save.mutate()
+            }
+          }}
+          placeholder={k.keyPlaceholder}
+          type="password"
+          value={key}
+        />
+        <Button disabled={!key.trim() || save.isPending} onClick={() => save.mutate()} size="sm" variant="outline">
+          {save.isPending ? <GlyphSpinner className="text-[0.75rem]" /> : k.keySave}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Compact "key on file" row for an available BYOK provider — one action:
+ *  remove (which flips the panel back to the paste form). */
+const ProviderKeyStatus: FC<{ provider: ProviderInfo }> = ({ provider }) => {
+  const k = useStudio()
+  const queryClient = useQueryClient()
+
+  const remove = useMutation({
+    mutationFn: () => clearProviderKey(provider.name),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: PROVIDERS_KEY })
+  })
+
+  return (
+    <div className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-quaternary)">
+      <Codicon name="key" size="0.75rem" />
+      <span className="min-w-0 flex-1 truncate">{provider.key_var}</span>
+      <Button
+        className="h-6 px-2 text-[0.625rem]"
+        disabled={remove.isPending}
+        onClick={() => remove.mutate()}
+        size="sm"
+        variant="ghost"
+      >
+        {k.keyRemove}
+      </Button>
+    </div>
+  )
+}
 
 const CreatePanel: FC<{
   modalityFilter: ModalityFilter
@@ -320,10 +398,15 @@ const CreatePanel: FC<{
       </div>
 
       {provider && !provider.available && (
-        <p className="rounded-md bg-(--ui-bg-tertiary) px-3 py-2 text-[0.75rem] text-(--ui-text-secondary)">
-          {provider.hint}
-        </p>
+        provider.key_var ? (
+          <ProviderKeyForm provider={provider} />
+        ) : (
+          <p className="rounded-md bg-(--ui-bg-tertiary) px-3 py-2 text-[0.75rem] text-(--ui-text-secondary)">
+            {provider.hint}
+          </p>
+        )
       )}
+      {provider?.available && provider.key_var && <ProviderKeyStatus provider={provider} />}
 
       {startImage && (
         <div className="flex items-center gap-2 rounded-md bg-(--ui-bg-tertiary) px-2 py-1.5">

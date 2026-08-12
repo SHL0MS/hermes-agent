@@ -9,6 +9,8 @@ real modules against a temp HERMES_HOME.
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -208,6 +210,7 @@ class _RecordingEngine:
 
     def __init__(self):
         self.calls = []
+        self.providers = {}
 
     def submit(self, *, provider, model, modality, params):
         self.calls.append(params)
@@ -334,3 +337,70 @@ def test_fal_nano_banana_pro_payload_uses_aspect_ratio_style():
     _, flux_payload = adapter._payload(flux, "image", {"prompt": "x", "aspect_ratio": "16:9"})
     assert flux_payload["image_size"] == "landscape_16_9"
     assert "aspect_ratio" not in flux_payload
+
+
+# ---------------------------------------------------------------------------
+# BYOK provider-key routes
+# ---------------------------------------------------------------------------
+
+
+def test_provider_key_routes_save_and_remove(api_client, monkeypatch):
+    client, _engine = api_client
+    api = _load("plugin_api")
+    saved = {}
+    removed = []
+
+    import types
+
+    fake_config = types.SimpleNamespace(
+        save_env_value=lambda key, value: saved.__setitem__(key, value),
+        remove_env_value=lambda key: removed.append(key) or True,
+    )
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", fake_config)
+    monkeypatch.delenv("KREA_API_KEY", raising=False)
+
+    # Unknown provider → 404; fal is deliberately not keyable here.
+    assert client.put("/providers/fal/key", json={"key": "x"}).status_code == 404
+    assert client.put("/providers/nonsense/key", json={"key": "x"}).status_code == 404
+
+    # Newline injection → 400, nothing written.
+    bad = client.put("/providers/krea/key", json={"key": "abc\ndef"})
+    assert bad.status_code == 400
+    assert saved == {}
+
+    # Happy path: persisted via save_env_value, live in os.environ, response
+    # carries availability but never the key value.
+    response = client.put("/providers/krea/key", json={"key": "  krea-test-key  "})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "krea-test-key" not in json.dumps(body)
+    assert saved == {"KREA_API_KEY": "krea-test-key"}
+    assert os.environ.get("KREA_API_KEY") == "krea-test-key"
+
+    # Remove: env cleared, .env writer called.
+    response = client.delete("/providers/krea/key")
+    assert response.status_code == 200
+    assert removed == ["KREA_API_KEY"]
+    assert "KREA_API_KEY" not in os.environ
+
+
+def test_provider_catalog_exposes_key_var(api_client):
+    client, engine = api_client
+    api = _load("plugin_api")
+
+    class _Adapter:
+        display_name = "Krea"
+
+        def is_available(self):
+            return False
+
+        def availability_hint(self):
+            return "hint"
+
+        def catalog(self):
+            return []
+
+    engine.providers = {"krea": _Adapter()}
+    providers = client.get("/providers").json()["providers"]
+    assert providers[0]["key_var"] == "KREA_API_KEY"
