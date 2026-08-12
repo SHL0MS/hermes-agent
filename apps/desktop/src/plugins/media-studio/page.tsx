@@ -587,7 +587,8 @@ const Lightbox: FC<{
   onClose: () => void
   onPrev: (() => void) | null
   onNext: (() => void) | null
-}> = ({ job, onClose, onNext, onPrev }) => {
+  onMoreLikeThis: ((job: MediaJob) => void) | null
+}> = ({ job, onClose, onMoreLikeThis, onNext, onPrev }) => {
   const k = useStudio()
   const [src, setSrc] = useState('')
   const [copied, setCopied] = useState(false)
@@ -595,6 +596,10 @@ const Lightbox: FC<{
   const isVideo = job.modality === 'video'
   const prompt = jobPrompt(job)
   const entries = jobParamEntries(job)
+  // Provenance: agent rows (and agent-queued studio jobs) carry their
+  // originating chat. Session routes are plain `/<id>` paths, so plugin
+  // navigation reaches them without any new SDK surface.
+  const originSession = job.session_id ?? null
 
   const paramLabel: Record<(typeof entries)[number]['key'], string> = {
     aspectRatio: k.aspectRatio,
@@ -716,6 +721,18 @@ const Lightbox: FC<{
           {prompt && (
             <div className="flex items-start gap-2">
               <p className="min-w-0 flex-1 whitespace-pre-wrap text-[0.75rem] leading-relaxed">{prompt}</p>
+              {onMoreLikeThis && prompt && (
+                <Tip label={k.moreLikeThis}>
+                  <Button
+                    className="shrink-0 text-white"
+                    onClick={() => onMoreLikeThis(job)}
+                    size="icon-sm"
+                    variant="ghost"
+                  >
+                    <Codicon name="sparkle" />
+                  </Button>
+                </Tip>
+              )}
               <Tip label={copied ? k.copiedPrompt : k.copyPrompt}>
                 <Button className="shrink-0 text-white" onClick={copyPrompt} size="icon-sm" variant="ghost">
                   <Codicon name={copied ? 'check' : 'copy'} />
@@ -732,6 +749,15 @@ const Lightbox: FC<{
                 {paramLabel[entry.key]}: {entry.seconds !== undefined ? k.seconds(entry.seconds) : entry.value}
               </span>
             ))}
+            {originSession && (
+              <button
+                className="cursor-pointer rounded bg-white/10 px-1.5 py-0.5 hover:bg-white/20"
+                onClick={() => host.navigate(`/${encodeURIComponent(originSession)}`)}
+                type="button"
+              >
+                {k.openOriginChat}
+              </button>
+            )}
             <span className="ml-auto text-white/50">{new Date(job.created_at * 1000).toLocaleString()}</span>
           </div>
         </div>
@@ -864,6 +890,31 @@ export const MediaStudioPage: FC = () => {
   })
 
   const jobs = useMemo(() => data?.jobs ?? [], [data])
+
+  // Deep link: /media?job=<id> (completion toast "View") opens the lightbox
+  // on that job once it's in the list, then strips the param so refresh /
+  // back don't re-trigger.
+  useEffect(() => {
+    const hash = window.location.hash
+    const queryAt = hash.indexOf('?')
+
+    if (queryAt < 0) {
+      return
+    }
+
+    const wanted = new URLSearchParams(hash.slice(queryAt + 1)).get('job')
+
+    if (!wanted) {
+      return
+    }
+
+    const job = jobs.find((j: MediaJob) => j.id === wanted)
+
+    if (job) {
+      setLightbox(job)
+      window.history.replaceState(null, '', hash.slice(0, queryAt))
+    }
+  }, [jobs])
   const active = jobs.filter(job => !isTerminal(job.state))
   const library = jobs.filter(job => isTerminal(job.state) && job.state !== 'cancelled')
   const filtered = filter === 'all' ? library : library.filter(job => job.modality === filter)
@@ -894,6 +945,20 @@ export const MediaStudioPage: FC = () => {
       modality: job.modality,
       model: job.model,
       params: job.params,
+      provider: job.provider
+    }).then(invalidateJobs)
+  }, [])
+
+  // "More like this": 4 fresh variations of a finished job — same prompt,
+  // model and params, seed unpinned so the server fans out random seeds.
+  const onMoreLikeThis = useCallback((job: MediaJob) => {
+    const { seed: _seed, ...params } = job.params
+
+    void submitJob({
+      count: 4,
+      modality: job.modality,
+      model: job.model,
+      params,
       provider: job.provider
     }).then(invalidateJobs)
   }, [])
@@ -989,6 +1054,17 @@ export const MediaStudioPage: FC = () => {
         <Lightbox
           job={lightboxJob ?? lightbox}
           onClose={() => setLightbox(null)}
+          onMoreLikeThis={
+            // Needs a resubmittable row: a studio provider + a prompt. Agent
+            // rows carry provider='agent'/tool-name models the engine can't
+            // re-run directly.
+            ['fal', 'krea'].includes((lightboxJob ?? lightbox).provider) && jobPrompt(lightboxJob ?? lightbox)
+              ? job => {
+                  onMoreLikeThis(job)
+                  setLightbox(null)
+                }
+              : null
+          }
           onNext={lightboxNext ? () => setLightbox(lightboxNext) : null}
           onPrev={lightboxPrev ? () => setLightbox(lightboxPrev) : null}
         />

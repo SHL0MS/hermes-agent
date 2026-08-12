@@ -68,6 +68,8 @@ type StudioMessages = {
   copiedPrompt: string
   lightboxPrev: string
   lightboxNext: string
+  moreLikeThis: string
+  openOriginChat: string
   keyLabel: string
   keyPlaceholder: string
   keySave: string
@@ -137,6 +139,8 @@ const en: StudioMessages = {
   copiedPrompt: 'Prompt copied',
   lightboxPrev: 'Previous (←)',
   lightboxNext: 'Next (→)',
+  moreLikeThis: 'More like this (4 variations)',
+  openOriginChat: 'Open originating chat',
   keyLabel: 'API key',
   keyPlaceholder: 'Paste API key…',
   keySave: 'Save key',
@@ -206,6 +210,8 @@ const ja: StudioMessages = {
   copiedPrompt: 'プロンプトをコピーしました',
   lightboxPrev: '前へ (←)',
   lightboxNext: '次へ (→)',
+  moreLikeThis: '似た画像を生成 (4枚)',
+  openOriginChat: '元のチャットを開く',
   keyLabel: 'APIキー',
   keyPlaceholder: 'APIキーを貼り付け…',
   keySave: 'キーを保存',
@@ -275,6 +281,8 @@ const zh: StudioMessages = {
   copiedPrompt: '已复制提示词',
   lightboxPrev: '上一个 (←)',
   lightboxNext: '下一个 (→)',
+  moreLikeThis: '生成相似图 (4张)',
+  openOriginChat: '打开来源对话',
   keyLabel: 'API 密钥',
   keyPlaceholder: '粘贴 API 密钥…',
   keySave: '保存密钥',
@@ -344,6 +352,8 @@ const zhHant: StudioMessages = {
   copiedPrompt: '已複製提示詞',
   lightboxPrev: '上一個 (←)',
   lightboxNext: '下一個 (→)',
+  moreLikeThis: '生成相似圖 (4張)',
+  openOriginChat: '開啟來源對話',
   keyLabel: 'API 金鑰',
   keyPlaceholder: '貼上 API 金鑰…',
   keySave: '儲存金鑰',

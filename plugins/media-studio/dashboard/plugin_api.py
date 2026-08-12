@@ -166,6 +166,14 @@ def _index_agent_media(store) -> int:
                 continue
             resolved = str(path)
             if resolved in known:
+                # Already a row — drop any provenance sidecar a later hook
+                # wrote for it (nothing will ever consume it).
+                stale = Path(resolved + ".msmeta.json")
+                if stale.is_file():
+                    try:
+                        stale.unlink()
+                    except OSError:
+                        pass
                 continue
             # Studio materializations are already rows; agent files carry the
             # tool's own prefix (image_/video_/<provider>_...). Register them
@@ -178,16 +186,33 @@ def _index_agent_media(store) -> int:
                 continue
             if stat.st_size == 0 or now - stat.st_mtime < _QUIESCENCE_S:
                 continue  # likely still downloading — next pass gets it
+            # Provenance sidecar: the chat-capture hook (plugin __init__)
+            # writes <file>.msmeta.json with the generating tool's params and
+            # session. Consume it so agent rows carry prompt + origin.
+            meta: Dict[str, Any] = {}
+            sidecar = Path(resolved + ".msmeta.json")
+            if sidecar.is_file():
+                try:
+                    meta = json.loads(sidecar.read_text(encoding="utf-8")) or {}
+                except (OSError, ValueError):
+                    meta = {}
             thumb = _engine_mod.make_thumbnail(path, modality)
             store.import_file(
-                provider="agent",
-                model="",
+                provider=str(meta.get("provider") or "agent"),
+                model=str(meta.get("model") or ""),
                 modality=modality,
                 result_path=resolved,
                 thumb_path=thumb,
                 source="agent",
                 created_at=stat.st_mtime,
+                params=meta.get("params") if isinstance(meta.get("params"), dict) else None,
+                session_id=str(meta["session_id"]) if meta.get("session_id") else None,
             )
+            if sidecar.is_file():
+                try:
+                    sidecar.unlink()
+                except OSError:
+                    pass
             imported += 1
     return imported
 

@@ -55,7 +55,8 @@ def test_hook_skips_cache_files_failures_and_dupes(tmp_path, monkeypatch):
     already = cache_images / "image_x.png"
     already.write_bytes(b"png")
 
-    # In-cache path: nothing new is created.
+    # In-cache path: no new media file; a provenance sidecar is allowed
+    # (the indexer consumes it at import and prunes it for known rows).
     shell._on_post_tool_call(
         tool_name="image_generate",
         result=json.dumps({"success": True, "image": str(already)}),
@@ -69,7 +70,8 @@ def test_hook_skips_cache_files_failures_and_dupes(tmp_path, monkeypatch):
     shell._on_post_tool_call(tool_name="terminal", result=json.dumps({"success": True}))
     _drain_threads()
 
-    assert sorted(p.name for p in cache_images.iterdir()) == ["image_x.png"]
+    media = sorted(p.name for p in cache_images.iterdir() if p.suffix != ".json")
+    assert media == ["image_x.png"]
 
     # Dedupe: the same outside file is materialized once even if reported twice.
     outside = tmp_path / "elsewhere.png"
@@ -93,13 +95,17 @@ def test_hook_downloads_urls_via_agent_helpers(tmp_path, monkeypatch):
         @staticmethod
         def save_url_image(url, prefix=""):
             calls.append(("image", url, prefix))
-            return tmp_path / "saved.png"
+            saved = tmp_path / "saved.png"
+            saved.write_bytes(b"png")
+            return saved
 
     class _FakeVideoProvider:
         @staticmethod
         def save_url_video(url, prefix=""):
             calls.append(("video", url, prefix))
-            return tmp_path / "saved.mp4"
+            saved = tmp_path / "saved.mp4"
+            saved.write_bytes(b"mp4")
+            return saved
 
     monkeypatch.setitem(sys.modules, "agent.image_gen_provider", _FakeImageProvider)
     monkeypatch.setitem(sys.modules, "agent.video_gen_provider", _FakeVideoProvider)
@@ -110,6 +116,8 @@ def test_hook_downloads_urls_via_agent_helpers(tmp_path, monkeypatch):
     shell._on_post_tool_call(
         tool_name="image_generate",
         result={"success": True, "image": "https://v3b.fal.media/files/x.png"},
+        args={"prompt": "a lit match", "aspect_ratio": "1:1"},
+        session_id="sess-123",
     )
     shell._on_post_tool_call(
         tool_name="video_generate",
@@ -120,3 +128,101 @@ def test_hook_downloads_urls_via_agent_helpers(tmp_path, monkeypatch):
     kinds = {c[0] for c in calls}
     assert kinds == {"image", "video"}
     assert all(c[1].startswith("https://") for c in calls)
+
+    # Provenance sidecar written next to the downloaded image: whitelisted
+    # params + session id, ready for the indexer.
+    sidecar = tmp_path / "saved.png.msmeta.json"
+    assert sidecar.is_file()
+    meta = json.loads(sidecar.read_text())
+    assert meta["session_id"] == "sess-123"
+    assert meta["params"]["prompt"] == "a lit match"
+    assert meta["params"]["aspect_ratio"] == "1:1"
+
+
+def test_indexer_consumes_provenance_sidecar(tmp_path, monkeypatch):
+    """Files with a .msmeta.json import with prompt/session; the sidecar is
+    deleted after import and never indexed as media itself."""
+    import importlib.util as ilu
+    import os as _os
+
+    home = tmp_path / "hermes"
+    (home / "cache" / "images").mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    spec = ilu.spec_from_file_location("ms_api_prov", REPO / "dashboard" / "plugin_api.py")
+    api = ilu.module_from_spec(spec)
+    sys.modules["ms_api_prov"] = api
+    spec.loader.exec_module(api)
+    monkeypatch.setattr(api._engine_mod, "make_thumbnail", lambda *_: None)
+
+    store = api._engine_mod.MediaStore(path=tmp_path / "prov.db")
+    old = time.time() - 60
+
+    image = home / "cache" / "images" / "image_chat_prov.png"
+    image.write_bytes(b"png")
+    _os.utime(image, (old, old))
+    sidecar = home / "cache" / "images" / "image_chat_prov.png.msmeta.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "provider": "agent",
+                "model": "image_generate",
+                "params": {"prompt": "brass astrolabe"},
+                "session_id": "sess-777",
+            }
+        )
+    )
+
+    assert api._index_agent_media(store) == 1
+    assert not sidecar.exists(), "sidecar must be consumed"
+    jobs = store.list_jobs(states=["done"])
+    assert len(jobs) == 1
+    row = jobs[0]
+    assert row["params"]["prompt"] == "brass astrolabe"
+    assert row["session_id"] == "sess-777"
+    assert row["model"] == "image_generate"
+    store.close()
+
+
+def test_agent_tool_queues_on_engine(tmp_path, monkeypatch):
+    """media_studio_generate submits N jobs (seed stepped) with the session
+    stamped, returns immediately without waiting, and reports cleanly when
+    the dashboard module is absent."""
+    shell = _load_shell()
+
+    class _FakeEngine:
+        def __init__(self):
+            self.calls = []
+
+        def submit(self, *, provider, model, modality, params, session_id=None):
+            self.calls.append({"provider": provider, "model": model, "modality": modality, "params": params, "session_id": session_id})
+            return {"id": f"job-{len(self.calls)}", "state": "queued"}
+
+    engine = _FakeEngine()
+    fake_mod = type(sys)("hermes_dashboard_plugin_media-studio")
+    fake_mod._ensure_engine = lambda: engine
+    fake_mod._store = None
+    monkeypatch.setitem(sys.modules, "hermes_dashboard_plugin_media-studio", fake_mod)
+
+    out = json.loads(
+        shell._media_studio_generate(
+            {"prompt": "poster study", "count": 3, "seed": 10, "aspect_ratio": "16:9"},
+            session_id="sess-9",
+        )
+    )
+    assert out["success"] is True
+    assert out["queued"] == ["job-1", "job-2", "job-3"]
+    assert [c["params"]["seed"] for c in engine.calls] == [10, 110, 210]
+    assert all(c["session_id"] == "sess-9" for c in engine.calls)
+    assert engine.calls[0]["params"]["aspect_ratio"] == "16:9"
+    assert engine.calls[0]["model"] == "fal-ai/nano-banana-pro"  # image default
+
+    # No dashboard mounted -> honest error, no crash.
+    monkeypatch.delitem(sys.modules, "hermes_dashboard_plugin_media-studio")
+    out = json.loads(shell._media_studio_generate({"prompt": "x"}))
+    assert out["success"] is False and "not mounted" in out["error"]
+
+    # Bad inputs.
+    monkeypatch.setitem(sys.modules, "hermes_dashboard_plugin_media-studio", fake_mod)
+    assert json.loads(shell._media_studio_generate({}))["success"] is False
+    assert json.loads(shell._media_studio_generate({"prompt": "x", "modality": "audio"}))["success"] is False

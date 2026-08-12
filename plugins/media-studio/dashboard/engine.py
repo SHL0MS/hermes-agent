@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS media_jobs (
     progress      TEXT,
     error         TEXT,
     source        TEXT NOT NULL DEFAULT 'studio',
+    session_id    TEXT,                      -- originating chat (provenance)
     result_paths  TEXT NOT NULL DEFAULT '[]',
     thumb_paths   TEXT NOT NULL DEFAULT '[]',
     created_at    REAL NOT NULL,
@@ -99,7 +100,15 @@ class MediaStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive column migrations for DBs created by older builds.
+        CREATE IF NOT EXISTS skips existing tables, so new columns need ALTER."""
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(media_jobs)")}
+        if "session_id" not in columns:
+            self._conn.execute("ALTER TABLE media_jobs ADD COLUMN session_id TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -115,14 +124,15 @@ class MediaStore:
         modality: str,
         params: Dict[str, Any],
         source: str = "studio",
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         job_id = uuid.uuid4().hex[:16]
         now = time.time()
         with self._lock:
             self._conn.execute(
-                "INSERT INTO media_jobs (id, provider, model, modality, params, state, source, created_at)"
-                " VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
-                (job_id, provider, model, modality, json.dumps(params), source, now),
+                "INSERT INTO media_jobs (id, provider, model, modality, params, state, source, session_id, created_at)"
+                " VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
+                (job_id, provider, model, modality, json.dumps(params), source, session_id, now),
             )
             self._append_event_locked(job_id, "created", {"state": "queued"})
             self._conn.commit()
@@ -138,20 +148,24 @@ class MediaStore:
         thumb_path: Optional[str],
         source: str,
         created_at: float,
+        params: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
     ) -> str:
         """Register an already-materialized file (agent output) as a done job."""
         job_id = uuid.uuid4().hex[:16]
         with self._lock:
             self._conn.execute(
-                "INSERT INTO media_jobs (id, provider, model, modality, state, source,"
-                " result_paths, thumb_paths, created_at, finished_at)"
-                " VALUES (?, ?, ?, ?, 'done', ?, ?, ?, ?, ?)",
+                "INSERT INTO media_jobs (id, provider, model, modality, params, state, source,"
+                " session_id, result_paths, thumb_paths, created_at, finished_at)"
+                " VALUES (?, ?, ?, ?, ?, 'done', ?, ?, ?, ?, ?, ?)",
                 (
                     job_id,
                     provider,
                     model,
                     modality,
+                    json.dumps(params or {}),
                     source,
+                    session_id,
                     json.dumps([result_path]),
                     json.dumps([thumb_path] if thumb_path else []),
                     created_at,
@@ -364,11 +378,14 @@ class MediaEngine:
         model: str,
         modality: str,
         params: Dict[str, Any],
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         adapter = self.providers.get(provider)
         if adapter is None:
             raise MediaProviderError(f"Unknown provider '{provider}'")
-        job = self.store.create_job(provider=provider, model=model, modality=modality, params=params)
+        job = self.store.create_job(
+            provider=provider, model=model, modality=modality, params=params, session_id=session_id
+        )
         self._start_worker(job)
         return job
 

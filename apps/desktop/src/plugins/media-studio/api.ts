@@ -43,6 +43,9 @@ export interface MediaJob {
   modality: 'image' | 'video'
   params: Record<string, unknown>
   state: JobState
+  /** Originating chat session (provenance) — set on agent rows and on studio
+   *  jobs queued by the agent tool. */
+  session_id?: null | string
   progress?: null | string
   error?: null | string
   source: string

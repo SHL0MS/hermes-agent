@@ -132,7 +132,12 @@ const plugin: HermesPlugin = {
             const label = prompt.length > 64 ? `${prompt.slice(0, 64)}…` : prompt
 
             host.notify({
-              action: { label: t('notifView'), onClick: openStudio },
+              // Deep-link: land on /media with the finished item's lightbox
+              // already open (the page reads ?job= on mount).
+              action: {
+                label: t('notifView'),
+                onClick: () => host.navigate(`/media?job=${encodeURIComponent(jobId)}`)
+              },
               kind: state === 'done' ? 'success' : 'error',
               message: label || job.model,
               title: state === 'done' ? t('notifDone') : t('notifFailed')
