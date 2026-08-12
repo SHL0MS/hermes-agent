@@ -51,6 +51,18 @@ import {
   type SubmitBody,
   submitJob
 } from './api'
+import {
+  ACCEPT_ATTR,
+  cardDragPayload,
+  clampThumb,
+  droppedPath,
+  loadThumbSize,
+  modelAcceptsImage,
+  saveThumbSize,
+  startImageIssue,
+  THUMB_MAX,
+  THUMB_MIN
+} from './attach'
 import { useStudio } from './i18n'
 import { clampCount, jobParamEntries, jobPrompt } from './job-params'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
@@ -208,7 +220,8 @@ const CreatePanel: FC<{
   onProviderCatalog: (providers: ProviderInfo[]) => void
   startImage: string
   onClearStartImage: () => void
-}> = ({ modalityFilter, onClearStartImage, onProviderCatalog, startImage }) => {
+  onStartImage: (path: string) => void
+}> = ({ modalityFilter, onClearStartImage, onProviderCatalog, onStartImage, startImage }) => {
   const k = useStudio()
   const { data } = useQuery({ queryFn: fetchProviders, queryKey: PROVIDERS_KEY, staleTime: 60_000 })
   const providers = useMemo(() => data?.providers ?? [], [data])
@@ -230,6 +243,9 @@ const CreatePanel: FC<{
   // Batch count: preset 1/2/4 or a free-typed custom N (fanned out server-side).
   const [countChoice, setCountChoice] = useState<string>('1')
   const [customCount, setCustomCount] = useState('8')
+  // Drag-over highlight for the panel-wide start-image drop zone.
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const patch = useCallback((update: Partial<typeof state>) => setState(prev => ({ ...prev, ...update })), [])
 
@@ -272,6 +288,33 @@ const CreatePanel: FC<{
   const supports = useMemo(() => model?.supports ?? {}, [model])
   const aspectChoices = model?.aspect_ratios ?? ASPECT_DEFAULTS
   const modality = model?.modality ?? 'image'
+  const acceptsImage = modelAcceptsImage(model)
+
+  // A picked/dropped file lands here; rejections explain themselves.
+  const takeStartImage = useCallback(
+    (path: null | string) => {
+      if (!path) {
+        return
+      }
+
+      const issue = startImageIssue(model, path)
+
+      if (issue === 'model') {
+        host.notify({ kind: 'warning', message: k.attachNotSupported(model?.display ?? '') })
+
+        return
+      }
+
+      if (issue === 'type') {
+        host.notify({ kind: 'warning', message: k.attachBadType(path.split('/').pop() ?? path) })
+
+        return
+      }
+
+      onStartImage(path)
+    },
+    [k, model, onStartImage]
+  )
 
   // Model switch: drop params the new model doesn't support.
   useEffect(() => {
@@ -424,6 +467,21 @@ const CreatePanel: FC<{
         provider.key_on_file ? <ProviderKeyStatus provider={provider} /> : <ProviderKeyForm provider={provider} />
       )}
 
+      {/* Hidden OS file picker — the attach button's target. */}
+      <input
+        accept={ACCEPT_ATTR}
+        className="hidden"
+        onChange={event => {
+          const file = event.target.files?.[0]
+          const getPath = window.hermesDesktop?.getPathForFile
+
+          takeStartImage(file && getPath ? getPath(file) || null : null)
+          event.target.value = ''
+        }}
+        ref={fileInputRef}
+        type="file"
+      />
+
       {startImage && (
         <div className="flex items-center gap-2 rounded-md bg-(--ui-bg-tertiary) px-2 py-1.5">
           <Thumb alt={k.startImage} className="size-10 rounded object-cover" path={startImage} />
@@ -438,18 +496,53 @@ const CreatePanel: FC<{
         </div>
       )}
 
-      <Textarea
-        className="min-h-20"
-        onChange={event => patch({ prompt: event.target.value })}
-        onKeyDown={event => {
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-            event.preventDefault()
-            onGenerate()
-          }
+      {/* Prompt + attach: the textarea is also the start-image drop target
+          (drag from Finder, the library grid below, or the project tree). */}
+      <div
+        className={cn(
+          'relative rounded-md transition-shadow',
+          dragOver && acceptsImage && 'ring-2 ring-(--dt-primary)'
+        )}
+        onDragLeave={() => setDragOver(false)}
+        onDragOver={event => {
+          event.preventDefault()
+          setDragOver(true)
         }}
-        placeholder={k.promptPlaceholder}
-        value={state.prompt}
-      />
+        onDrop={event => {
+          event.preventDefault()
+          setDragOver(false)
+          takeStartImage(droppedPath(event.dataTransfer, window.hermesDesktop?.getPathForFile))
+        }}
+      >
+        <Textarea
+          className="min-h-20 pr-9"
+          onChange={event => patch({ prompt: event.target.value })}
+          onKeyDown={event => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+              event.preventDefault()
+              onGenerate()
+            }
+          }}
+          placeholder={k.promptPlaceholder}
+          value={state.prompt}
+        />
+        <div className="absolute bottom-1.5 right-1.5">
+          <Tip label={acceptsImage ? k.attachImage : k.attachUnsupported}>
+            {/* span keeps the tooltip alive over a disabled button */}
+            <span className="inline-flex">
+              <Button
+                className="text-(--ui-text-quaternary) hover:text-foreground"
+                disabled={!acceptsImage}
+                onClick={() => fileInputRef.current?.click()}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <Codicon name="attach" />
+              </Button>
+            </span>
+          </Tip>
+        </div>
+      </div>
 
       {supports.negative_prompt && (
         <Input
@@ -789,7 +882,23 @@ const LibraryCard: FC<{
   }
 
   return (
-    <div className="group relative overflow-hidden rounded-lg border border-(--ui-stroke-secondary)">
+    <div
+      className="group relative overflow-hidden rounded-lg border border-(--ui-stroke-secondary)"
+      draggable={!failed && Boolean(job.result_paths[0])}
+      onDragStart={event => {
+        const path = job.result_paths[0]
+
+        if (!path) {
+          return
+        }
+
+        for (const [type, value] of cardDragPayload(path)) {
+          event.dataTransfer.setData(type, value)
+        }
+
+        event.dataTransfer.effectAllowed = 'copy'
+      }}
+    >
       {failed ? (
         <div className="flex aspect-square flex-col items-center justify-center gap-2 p-3 text-center">
           <Codicon className="text-(--ui-text-quaternary)" name="warning" size="1.25rem" />
@@ -879,7 +988,14 @@ export const MediaStudioPage: FC = () => {
   const [filter, setFilter] = useState<ModalityFilter>('all')
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
+  // Thumbnail edge length (px) for the library grid — persisted.
+  const [thumbSize, setThumbSizeState] = useState(loadThumbSize)
   const providersRef = useRef<ProviderInfo[]>([])
+
+  const setThumbSize = useCallback((value: number) => {
+    setThumbSizeState(value)
+    saveThumbSize(value)
+  }, [])
 
   const { data } = useQuery({
     queryFn: fetchJobs,
@@ -1010,6 +1126,7 @@ export const MediaStudioPage: FC = () => {
         onProviderCatalog={providers => {
           providersRef.current = providers
         }}
+        onStartImage={setStartImage}
         startImage={startImage}
       />
 
@@ -1030,11 +1147,32 @@ export const MediaStudioPage: FC = () => {
       )}
 
       <section className="flex min-h-0 flex-1 flex-col gap-2">
-        <h2 className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">{k.library}</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">{k.library}</h2>
+          {/* Finder-style thumbnail size slider (persisted). */}
+          <label className="flex items-center gap-1.5 text-(--ui-text-quaternary)">
+            <Codicon name="screen-normal" size="0.7rem" />
+            <input
+              aria-label={k.thumbSize}
+              className="h-1 w-28 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-tertiary)"
+              max={THUMB_MAX}
+              min={THUMB_MIN}
+              onChange={event => setThumbSize(clampThumb(Number(event.target.value)))}
+              step={8}
+              style={{ accentColor: 'var(--dt-primary)' }}
+              type="range"
+              value={thumbSize}
+            />
+            <Codicon name="screen-full" size="0.85rem" />
+          </label>
+        </div>
         {filtered.length === 0 ? (
           <EmptyState description={k.emptyLibraryHint} title={k.emptyLibrary} />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div
+            className="grid gap-3"
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbSize}px, 1fr))` }}
+          >
             {filtered.map(job => (
               <LibraryCard
                 job={job}

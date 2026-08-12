@@ -70,6 +70,11 @@ type StudioMessages = {
   lightboxNext: string
   moreLikeThis: string
   openOriginChat: string
+  attachImage: string
+  attachUnsupported: string
+  attachNotSupported: (model: string) => string
+  attachBadType: (name: string) => string
+  thumbSize: string
   keyLabel: string
   keyPlaceholder: string
   keySave: string
@@ -141,6 +146,11 @@ const en: StudioMessages = {
   lightboxNext: 'Next (→)',
   moreLikeThis: 'More like this (4 variations)',
   openOriginChat: 'Open originating chat',
+  attachImage: 'Attach start image (or drag one here)',
+  attachUnsupported: 'This model does not take an input image',
+  attachNotSupported: model => `${model || 'This model'} does not take an input image`,
+  attachBadType: name => `${name}: not a supported image (png, jpg, webp, gif)`,
+  thumbSize: 'Thumbnail size',
   keyLabel: 'API key',
   keyPlaceholder: 'Paste API key…',
   keySave: 'Save key',
@@ -212,6 +222,11 @@ const ja: StudioMessages = {
   lightboxNext: '次へ (→)',
   moreLikeThis: '似た画像を生成 (4枚)',
   openOriginChat: '元のチャットを開く',
+  attachImage: '開始画像を添付（ここにドラッグも可）',
+  attachUnsupported: 'このモデルは入力画像に対応していません',
+  attachNotSupported: model => `${model || 'このモデル'}は入力画像に対応していません`,
+  attachBadType: name => `${name}: 対応していない画像形式です (png, jpg, webp, gif)`,
+  thumbSize: 'サムネイルサイズ',
   keyLabel: 'APIキー',
   keyPlaceholder: 'APIキーを貼り付け…',
   keySave: 'キーを保存',
@@ -283,6 +298,11 @@ const zh: StudioMessages = {
   lightboxNext: '下一个 (→)',
   moreLikeThis: '生成相似图 (4张)',
   openOriginChat: '打开来源对话',
+  attachImage: '添加起始图（也可拖拽到此处）',
+  attachUnsupported: '该模型不支持输入图像',
+  attachNotSupported: model => `${model || '该模型'}不支持输入图像`,
+  attachBadType: name => `${name}：不支持的图像格式 (png, jpg, webp, gif)`,
+  thumbSize: '缩略图大小',
   keyLabel: 'API 密钥',
   keyPlaceholder: '粘贴 API 密钥…',
   keySave: '保存密钥',
@@ -354,6 +374,11 @@ const zhHant: StudioMessages = {
   lightboxNext: '下一個 (→)',
   moreLikeThis: '生成相似圖 (4張)',
   openOriginChat: '開啟來源對話',
+  attachImage: '加入起始圖（也可拖曳到此處）',
+  attachUnsupported: '此模型不支援輸入圖像',
+  attachNotSupported: model => `${model || '此模型'}不支援輸入圖像`,
+  attachBadType: name => `${name}：不支援的圖像格式 (png, jpg, webp, gif)`,
+  thumbSize: '縮圖大小',
   keyLabel: 'API 金鑰',
   keyPlaceholder: '貼上 API 金鑰…',
   keySave: '儲存金鑰',
