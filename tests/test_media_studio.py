@@ -315,3 +315,22 @@ def test_krea_nano_banana_pro_forwards_resolution(monkeypatch):
         {"prompt": "study", "aspect_ratio": "1:1", "resolution": "4K"},
     )
     assert captured["body"]["resolution"] == "1K"
+
+
+def test_fal_nano_banana_pro_payload_uses_aspect_ratio_style():
+    providers_mod = _load("providers")
+    adapter = providers_mod.FalAdapter()
+    model = adapter._model("fal-ai/nano-banana-pro")
+
+    endpoint, payload = adapter._payload(
+        model, "image", {"prompt": "poster type study", "aspect_ratio": "3:2", "resolution": "2K", "seed": 7}
+    )
+    assert endpoint == "fal-ai/nano-banana-pro"
+    # Gemini endpoints take aspect_ratio directly — image_size must NOT leak in.
+    assert payload == {"prompt": "poster type study", "aspect_ratio": "3:2", "resolution": "2K", "seed": 7}
+
+    # FLUX models keep the image_size preset mapping.
+    flux = adapter._model("fal-ai/flux-2/klein/9b")
+    _, flux_payload = adapter._payload(flux, "image", {"prompt": "x", "aspect_ratio": "16:9"})
+    assert flux_payload["image_size"] == "landscape_16_9"
+    assert "aspect_ratio" not in flux_payload

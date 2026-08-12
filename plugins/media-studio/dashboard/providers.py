@@ -105,6 +105,19 @@ FAL_IMAGE_MODELS: List[Dict[str, Any]] = [
         "supports": {"aspect_ratio": True, "seed": True},
         "note": "Higher fidelity, slower.",
     },
+    {
+        # Same Gemini model Krea serves, but billed through the managed
+        # gateway (portal credits) instead of Krea's separate API wallet.
+        "id": "fal-ai/nano-banana-pro",
+        "display": "Nano Banana Pro",
+        "modality": "image",
+        "tier": "quality",
+        "payload_style": "aspect_ratio",
+        "supports": {"aspect_ratio": True, "resolution": True, "seed": True},
+        "aspect_ratios": ["21:9", "1:1", "4:3", "3:2", "2:3", "5:4", "4:5", "3:4", "16:9", "9:16"],
+        "resolutions": ["1K", "2K", "4K"],
+        "note": "Gemini 3 Pro Image — best-in-class typography. 4K costs ~2x.",
+    },
 ]
 
 FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
@@ -238,7 +251,17 @@ class FalAdapter:
         if modality == "image":
             payload: Dict[str, Any] = {"prompt": prompt}
             aspect = params.get("aspect_ratio") or "16:9"
-            payload["image_size"] = _FAL_IMAGE_SIZE.get(aspect, "landscape_16_9")
+            if model.get("payload_style") == "aspect_ratio":
+                # Gemini-family endpoints take aspect_ratio + resolution
+                # directly (no image_size presets).
+                allowed = model.get("aspect_ratios")
+                payload["aspect_ratio"] = aspect if not allowed or aspect in allowed else allowed[0]
+                if supports.get("resolution") and params.get("resolution"):
+                    allowed_res = model.get("resolutions")
+                    if not allowed_res or params["resolution"] in allowed_res:
+                        payload["resolution"] = params["resolution"]
+            else:
+                payload["image_size"] = _FAL_IMAGE_SIZE.get(aspect, "landscape_16_9")
             if params.get("seed") is not None and supports.get("seed"):
                 payload["seed"] = int(params["seed"])
             return model["id"], payload
@@ -397,7 +420,7 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "supports": {"aspect_ratio": True, "resolution": True},
         "aspect_ratios": ["21:9", "1:1", "4:3", "3:2", "2:3", "5:4", "4:5", "3:4", "16:9", "9:16"],
         "resolutions": ["1K", "2K", "4K"],
-        "note": "Best-in-class typography and instruction following.",
+        "note": "Bills Krea's separate API wallet — also on fal via portal credits.",
     },
     {
         "id": "kling/kling-2.5",
