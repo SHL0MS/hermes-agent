@@ -48,6 +48,7 @@ import {
   submitJob
 } from './api'
 import { useStudio } from './i18n'
+import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -119,10 +120,11 @@ interface CreateState {
 }
 
 const CreatePanel: FC<{
+  modalityFilter: ModalityFilter
   onProviderCatalog: (providers: ProviderInfo[]) => void
   startImage: string
   onClearStartImage: () => void
-}> = ({ onClearStartImage, onProviderCatalog, startImage }) => {
+}> = ({ modalityFilter, onClearStartImage, onProviderCatalog, startImage }) => {
   const k = useStudio()
   const { data } = useQuery({ queryFn: fetchProviders, queryKey: PROVIDERS_KEY, staleTime: 60_000 })
   const providers = useMemo(() => data?.providers ?? [], [data])
@@ -143,18 +145,41 @@ const CreatePanel: FC<{
 
   const patch = useCallback((update: Partial<typeof state>) => setState(prev => ({ ...prev, ...update })), [])
 
-  // First available provider/model become the initial selection.
+  // Initial pick + reconciliation: the header's All/Image/Video mode governs
+  // which models the dropdown offers, so a selection the filter excludes hops
+  // to a sibling model (same provider first, then the first provider that
+  // serves the modality).
   useEffect(() => {
-    if (state.provider || providers.length === 0) {
+    if (providers.length === 0) {
       return
     }
 
-    const first = providers.find(p => p.available) ?? providers[0]
+    if (!state.provider) {
+      const first = providers.find(p => p.available) ?? providers[0]
+      const models = visibleModels(first.models, modalityFilter)
 
-    patch({ modelId: first.models[0]?.id ?? '', provider: first.name })
-  }, [patch, providers, state.provider])
+      patch({ modelId: (models[0] ?? first.models[0])?.id ?? '', provider: first.name })
+
+      return
+    }
+
+    const moved = reconcileSelection(providers, modalityFilter, {
+      modelId: state.modelId,
+      provider: state.provider
+    })
+
+    if (moved) {
+      patch(moved)
+    }
+  }, [modalityFilter, patch, providers, state.modelId, state.provider])
 
   const provider = providers.find(p => p.name === state.provider)
+
+  const modelChoices = useMemo(
+    () => visibleModels(provider?.models ?? [], modalityFilter),
+    [modalityFilter, provider]
+  )
+
   const model: ModelInfo | undefined = provider?.models.find(m => m.id === state.modelId)
   const supports = useMemo(() => model?.supports ?? {}, [model])
   const aspectChoices = model?.aspect_ratios ?? ASPECT_DEFAULTS
@@ -237,8 +262,9 @@ const CreatePanel: FC<{
           {k.provider}
           <Select onValueChange={value => {
             const next = providers.find(p => p.name === value)
+            const nextModels = visibleModels(next?.models ?? [], modalityFilter)
 
-            patch({ modelId: next?.models[0]?.id ?? '', provider: value })
+            patch({ modelId: (nextModels[0] ?? next?.models[0])?.id ?? '', provider: value })
           }} value={state.provider}
           >
             <SelectTrigger className="h-8">
@@ -265,7 +291,7 @@ const CreatePanel: FC<{
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {(provider?.models ?? []).map(m => (
+              {modelChoices.map(m => (
                 <SelectItem key={m.id} value={m.id}>
                   <span className="flex items-center gap-2">
                     <Codicon
@@ -577,11 +603,11 @@ const LibraryCard: FC<{
 // Page
 // ---------------------------------------------------------------------------
 
-type LibraryFilter = 'all' | 'image' | 'video'
-
 export const MediaStudioPage: FC = () => {
   const k = useStudio()
-  const [filter, setFilter] = useState<LibraryFilter>('all')
+  // One page-wide mode: gates BOTH the create panel's model dropdown and the
+  // library grid.
+  const [filter, setFilter] = useState<ModalityFilter>('all')
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
   const providersRef = useRef<ProviderInfo[]>([])
@@ -655,6 +681,7 @@ export const MediaStudioPage: FC = () => {
       </header>
 
       <CreatePanel
+        modalityFilter={filter}
         onClearStartImage={() => setStartImage('')}
         onProviderCatalog={providers => {
           providersRef.current = providers
