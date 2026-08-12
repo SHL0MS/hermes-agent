@@ -215,6 +215,11 @@ def provider_catalog() -> Dict[str, Any]:
                 "hint": adapter.availability_hint(),
                 "models": adapter.catalog(),
                 "key_var": PROVIDER_KEY_VARS.get(name),
+                # Whether the BYOK key is actually on file — availability alone
+                # can't answer this for providers with a managed (keyless) route.
+                "key_on_file": bool(
+                    PROVIDER_KEY_VARS.get(name) and os.environ.get(PROVIDER_KEY_VARS[name])
+                ),
             }
         )
     return {"providers": out}

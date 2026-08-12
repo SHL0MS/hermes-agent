@@ -299,7 +299,16 @@ const CreatePanel: FC<{
     onSuccess: () => invalidateJobs()
   })
 
-  const canSubmit = Boolean(state.prompt.trim() && provider?.available && model) && !submit.isPending
+  // Requirement deviations: some models make the prompt optional (upscaler,
+  // Kling with a start image) or demand a start image (upscaler, i2v-only).
+  const promptRequired = model?.requires?.prompt !== false
+  const imageRequired = model?.requires?.image_url === true
+
+  const inputsSatisfied =
+    (Boolean(state.prompt.trim()) || (!promptRequired && Boolean(startImage))) &&
+    (!imageRequired || Boolean(startImage))
+
+  const canSubmit = Boolean(inputsSatisfied && provider?.available && model) && !submit.isPending
   const count = countChoice === COUNT_CUSTOM ? clampCount(customCount, MAX_COUNT) : Number(countChoice)
 
   const onGenerate = () => {
@@ -407,7 +416,13 @@ const CreatePanel: FC<{
           </p>
         )
       )}
-      {provider?.available && provider.key_var && <ProviderKeyStatus provider={provider} />}
+      {/* Available + keyable: show either the key-on-file row or the paste
+          form. A provider can be available WITHOUT a key (managed gateway
+          route) — the form must stay reachable there or a removed key could
+          never be re-added. */}
+      {provider?.available && provider.key_var && (
+        provider.key_on_file ? <ProviderKeyStatus provider={provider} /> : <ProviderKeyForm provider={provider} />
+      )}
 
       {startImage && (
         <div className="flex items-center gap-2 rounded-md bg-(--ui-bg-tertiary) px-2 py-1.5">

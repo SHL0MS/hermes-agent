@@ -288,9 +288,10 @@ def test_krea_nano_banana_pro_forwards_resolution(monkeypatch):
     monkeypatch.setenv("KREA_API_KEY", "test-token")
     captured = {}
 
-    def fake_request(method, path, body=None):
+    def fake_request(method, path, body=None, base=None, bearer=None):
         captured["path"] = path
         captured["body"] = body
+        captured["base"] = base
         return {"job_id": "krea-1"}
 
     monkeypatch.setattr(adapter, "_request", fake_request)
@@ -320,6 +321,70 @@ def test_krea_nano_banana_pro_forwards_resolution(monkeypatch):
     assert captured["body"]["resolution"] == "1K"
 
 
+def test_krea_routes_managed_vs_direct(monkeypatch):
+    """Subscriber (no key): krea-2 rides the managed gateway and the job ref
+    remembers the route; wallet-only models are hidden from the catalog.
+    BYOK key present: everything goes direct."""
+    import json as _json
+    import types
+
+    providers_mod = _load("providers")
+    adapter = providers_mod.KreaAdapter()
+    monkeypatch.delenv("KREA_API_KEY", raising=False)
+    gateway = types.SimpleNamespace(
+        gateway_origin="https://krea-gateway.example.com",
+        nous_user_token="nous-tok",
+    )
+    monkeypatch.setattr(adapter, "_managed_gateway", lambda: gateway)
+    captured = {}
+
+    def fake_request(method, path, body=None, base=None, bearer=None):
+        captured.update(path=path, base=base, bearer=bearer)
+        return {"job_id": "j1", "status": "completed", "result": {"urls": []}}
+
+    monkeypatch.setattr(adapter, "_request", fake_request)
+
+    ref = adapter.submit("krea/krea-2/large", "image", {"prompt": "x", "aspect_ratio": "1:1"})
+    assert captured["base"] == "https://krea-gateway.example.com"
+    assert captured["bearer"] == "nous-tok"
+    assert _json.loads(ref.ref)["via"] == "managed"
+
+    # Status polls the SAME route the job was issued on.
+    adapter.status(ref)
+    assert captured["base"] == "https://krea-gateway.example.com"
+
+    # Wallet-only models are hidden without a key; visible with one.
+    ids = {m["id"] for m in adapter.catalog()}
+    assert "kling/kling-2.5" not in ids
+    assert "krea/krea-2/large" in ids
+    monkeypatch.setenv("KREA_API_KEY", "direct-key")
+    ids_with_key = {m["id"] for m in adapter.catalog()}
+    assert "kling/kling-2.5" in ids_with_key
+
+    # With a key, managed models STILL prefer portal credits (an empty Krea
+    # wallet must not 402 models the subscription covers)…
+    ref2 = adapter.submit("krea/krea-2/large", "image", {"prompt": "x"})
+    assert captured["base"] == "https://krea-gateway.example.com"
+    assert _json.loads(ref2.ref)["via"] == "managed"
+
+    # …while wallet-only models use the key, and a key WITHOUT a gateway
+    # (no subscription) goes direct for everything.
+    adapter.submit("kling/kling-2.5", "video", {"prompt": "x", "duration": 5})
+    assert captured["base"] == providers_mod._KREA_BASE
+    assert captured["bearer"] == "direct-key"
+    monkeypatch.setattr(adapter, "_managed_gateway", lambda: None)
+    ref3 = adapter.submit("krea/krea-2/large", "image", {"prompt": "x"})
+    assert captured["base"] == providers_mod._KREA_BASE
+    assert _json.loads(ref3.ref)["via"] == "direct"
+    monkeypatch.setattr(adapter, "_managed_gateway", lambda: gateway)
+
+    # Legacy plain-string refs (pre-managed builds) resolve as direct.
+    legacy = providers_mod.ProviderJobRef(ref="legacy-job-id")
+    adapter.status(legacy)
+    assert captured["path"] == "/jobs/legacy-job-id"
+    assert captured["base"] == providers_mod._KREA_BASE
+
+
 def test_fal_nano_banana_pro_payload_uses_aspect_ratio_style():
     providers_mod = _load("providers")
     adapter = providers_mod.FalAdapter()
@@ -337,6 +402,135 @@ def test_fal_nano_banana_pro_payload_uses_aspect_ratio_style():
     _, flux_payload = adapter._payload(flux, "image", {"prompt": "x", "aspect_ratio": "16:9"})
     assert flux_payload["image_size"] == "landscape_16_9"
     assert "aspect_ratio" not in flux_payload
+
+
+def test_fal_payload_styles_match_harvested_schemas():
+    """One assertion per payload family, pinned to the fal OpenAPI dumps."""
+    providers_mod = _load("providers")
+    adapter = providers_mod.FalAdapter()
+
+    # Seedream: resolution folds into image_size as auto_NK.
+    seedream = adapter._model("bytedance/seedream/v5/lite/text-to-image")
+    _, p = adapter._payload(seedream, "image", {"prompt": "x", "resolution": "4K"})
+    assert p["image_size"] == "auto_4K"
+
+    # GPT Image 2: the resolution control maps to the quality knob.
+    gpt = adapter._model("fal-ai/gpt-image-2")
+    _, p = adapter._payload(gpt, "image", {"prompt": "x", "aspect_ratio": "16:9", "resolution": "high"})
+    assert p["quality"] == "high"
+    assert p["image_size"] == "landscape_16_9"
+
+    # GPT Image 1.5: literal pixel dimensions.
+    gpt15 = adapter._model("fal-ai/gpt-image-1.5")
+    _, p = adapter._payload(gpt15, "image", {"prompt": "x", "aspect_ratio": "3:2", "resolution": "medium"})
+    assert p["image_size"] == "1536x1024"
+    assert p["quality"] == "medium"
+
+    # Edit routing: a start image on an edit-capable model swaps endpoint and
+    # sends image_urls as an ARRAY (data URI accepted).
+    import base64
+
+    tiny_png = "data:image/png;base64," + base64.b64encode(b"png-bytes").decode()
+    nb2 = adapter._model("fal-ai/nano-banana-2")
+    endpoint, p = adapter._payload(nb2, "image", {"prompt": "restyle", "image_url": tiny_png})
+    assert endpoint == "fal-ai/nano-banana-2/edit"
+    assert p["image_urls"] == [tiny_png]
+
+    # Clarity upscaler: prompt optional, image required, factor numeric.
+    clarity = adapter._model("fal-ai/clarity-upscaler")
+    endpoint, p = adapter._payload(clarity, "image", {"image_url": tiny_png, "resolution": "4x"})
+    assert endpoint == "fal-ai/clarity-upscaler"
+    assert p["image_url"] == tiny_png
+    assert p["upscale_factor"] == 4.0
+    assert "prompt" not in p
+    import pytest as _pytest
+
+    with _pytest.raises(providers_mod.MediaProviderError):
+        adapter._payload(clarity, "image", {"prompt": "no image"})
+
+    # Veo: duration takes an s-suffix string.
+    veo = adapter._model("veo3.1")
+    _, p = adapter._payload(veo, "video", {"prompt": "x", "duration": 8, "audio": True})
+    assert p["duration"] == "8s"
+    assert p["generate_audio"] is True
+
+    # Seedance: duration is a bare-string enum.
+    seedance = adapter._model("seedance-2.5")
+    _, p = adapter._payload(seedance, "video", {"prompt": "x", "duration": 6})
+    assert p["duration"] == "6"
+
+    # Pixverse: audio flag is generate_audio_switch.
+    pixverse = adapter._model("pixverse-v6")
+    _, p = adapter._payload(pixverse, "video", {"prompt": "x", "audio": False})
+    assert p["generate_audio_switch"] is False
+    assert "generate_audio" not in p
+
+    # Kling 4K: start image goes to start_image_url; prompt optional with it.
+    kling = adapter._model("kling-v3-4k")
+    endpoint, p = adapter._payload(kling, "video", {"image_url": tiny_png, "duration": 5})
+    assert endpoint == "fal-ai/kling-video/v3/4k/image-to-video"
+    assert p["start_image_url"] == tiny_png
+    assert "prompt" not in p
+
+    # Gemini Omni Flash is i2v-only: text-to-video submits are refused with
+    # guidance, and aspect_ratio IS sent on i2v (schema requires it there).
+    omni = adapter._model("gemini-omni-flash")
+    with _pytest.raises(providers_mod.MediaProviderError):
+        adapter._payload(omni, "video", {"prompt": "x"})
+    _, p = adapter._payload(omni, "video", {"prompt": "x", "image_url": tiny_png, "aspect_ratio": "16:9"})
+    assert p["aspect_ratio"] == "16:9"
+
+    # LTX: sizing rides video_size presets, not aspect_ratio.
+    ltx = adapter._model("ltx-2.3-22b")
+    _, p = adapter._payload(ltx, "video", {"prompt": "x", "aspect_ratio": "16:9"})
+    assert p["video_size"] == "landscape_16_9"
+    assert "aspect_ratio" not in p
+
+
+def test_fal_catalog_covers_gateway_pricing_rules():
+    """Every fal endpoint with an enabled gateway pricing rule (2026-08-12)
+    is reachable through the catalog — as a model id or a routed endpoint —
+    except the two documented exclusions."""
+    providers_mod = _load("providers")
+    reachable = set()
+    for m in providers_mod.FAL_IMAGE_MODELS:
+        reachable.add(m["id"])
+        if m.get("edit_endpoint"):
+            reachable.add(m["edit_endpoint"])
+    for m in providers_mod.FAL_VIDEO_MODELS:
+        for key in ("text_endpoint", "image_endpoint"):
+            if m.get(key):
+                reachable.add(m[key])
+
+    gateway_endpoints = {
+        "alibaba/qwen-image-3/edit", "alibaba/qwen-image-3/text-to-image",
+        "bytedance/seedream/v5/lite/text-to-image", "bytedance/seedream/v5/pro/edit",
+        "bytedance/seedream/v5/pro/text-to-image", "fal-ai/flux-2-pro",
+        "fal-ai/flux-2/klein/9b", "fal-ai/gpt-image-1.5", "fal-ai/gpt-image-2",
+        "fal-ai/ideogram/v3", "fal-ai/krea/v2/large/text-to-image",
+        "fal-ai/krea/v2/medium/text-to-image", "fal-ai/nano-banana",
+        "fal-ai/nano-banana-2", "fal-ai/nano-banana-2/edit", "fal-ai/nano-banana-pro",
+        "fal-ai/qwen-image", "fal-ai/recraft/v4/pro/text-to-image",
+        "fal-ai/recraft/v4.1/text-to-image", "fal-ai/z-image/turbo",
+        "google/nano-banana-2-lite", "google/nano-banana-2-lite/edit",
+        "ideogram/v4/fast", "ideogram/v4/instant", "microsoft/mai-image-2.5-pro",
+        "alibaba/happy-horse/image-to-video", "alibaba/happy-horse/text-to-video",
+        "blackforestlabs/flux-3/image-to-video", "blackforestlabs/flux-3/text-to-video",
+        "bytedance/seedance-2.0/image-to-video", "bytedance/seedance-2.0/text-to-video",
+        "bytedance/seedance-2.0/mini/image-to-video", "bytedance/seedance-2.0/mini/text-to-video",
+        "bytedance/seedance-2.5/image-to-video", "bytedance/seedance-2.5/text-to-video",
+        "fal-ai/kling-video/v3/4k/image-to-video", "fal-ai/kling-video/v3/4k/text-to-video",
+        "fal-ai/ltx-2.3-22b/image-to-video", "fal-ai/ltx-2.3-22b/text-to-video",
+        "fal-ai/pixverse/v6/image-to-video", "fal-ai/pixverse/v6/text-to-video",
+        "fal-ai/veo3.1", "fal-ai/veo3.1/image-to-video",
+        "google/gemini-omni-flash/image-to-video",
+        "minimax/h3/image-to-video", "minimax/h3/text-to-video",
+        "xai/grok-imagine-video/v1.5/image-to-video", "xai/grok-imagine-video/v1.5/text-to-video",
+    }
+    # Documented exclusions: billing alias + video upscaler (no upload UI yet).
+    excluded = {"openai/gpt-image-2", "fal-ai/clarity-upscaler", "fal-ai/seedvr/upscale/video"}
+    missing = gateway_endpoints - reachable - excluded
+    assert not missing, f"gateway endpoints not reachable from the catalog: {sorted(missing)}"
 
 
 # ---------------------------------------------------------------------------
@@ -404,3 +598,33 @@ def test_provider_catalog_exposes_key_var(api_client):
     engine.providers = {"krea": _Adapter()}
     providers = client.get("/providers").json()["providers"]
     assert providers[0]["key_var"] == "KREA_API_KEY"
+
+
+def test_provider_catalog_key_on_file_tracks_env(api_client, monkeypatch):
+    """key_on_file answers 'is a BYOK key present', independent of available —
+    a managed-gateway provider is available keyless, and the UI needs the
+    distinction to keep the paste form reachable after a key removal."""
+    client, engine = api_client
+
+    class _Adapter:
+        display_name = "Krea"
+
+        def is_available(self):
+            return True  # managed route keeps it available without a key
+
+        def availability_hint(self):
+            return "hint"
+
+        def catalog(self):
+            return []
+
+    engine.providers = {"krea": _Adapter()}
+
+    monkeypatch.delenv("KREA_API_KEY", raising=False)
+    providers = client.get("/providers").json()["providers"]
+    assert providers[0]["available"] is True
+    assert providers[0]["key_on_file"] is False
+
+    monkeypatch.setenv("KREA_API_KEY", "k")
+    providers = client.get("/providers").json()["providers"]
+    assert providers[0]["key_on_file"] is True

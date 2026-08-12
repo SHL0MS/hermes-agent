@@ -14,6 +14,8 @@ export interface ModelInfo {
   tier: string
   note?: string
   supports: Record<string, boolean>
+  /** Deviations from the defaults (prompt required, image optional). */
+  requires?: { prompt?: boolean; image_url?: boolean }
   aspect_ratios?: string[]
   resolutions?: string[]
   durations?: number[]
@@ -27,6 +29,9 @@ export interface ProviderInfo {
   models: ModelInfo[]
   /** Env var this provider's BYOK key lands in; null → not keyable here. */
   key_var?: null | string
+  /** Whether that key is actually on file (managed routes are available
+   *  without one, so `available` can't answer this). */
+  key_on_file?: boolean
 }
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'expired'
