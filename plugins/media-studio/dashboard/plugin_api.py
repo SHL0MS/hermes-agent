@@ -157,6 +157,7 @@ class SubmitBody(BaseModel):
     model: str
     modality: str = Field(pattern="^(image|video)$")
     params: Dict[str, Any] = Field(default_factory=dict)
+    count: int = Field(1, ge=1, le=50, description="fan out N identical jobs (seed varied per job)")
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +221,28 @@ def list_jobs(
 @router.post("/jobs")
 def submit_job(body: SubmitBody) -> Dict[str, Any]:
     engine = _ensure_engine()
+    jobs = []
     try:
-        job = engine.submit(provider=body.provider, model=body.model, modality=body.modality, params=body.params)
+        for index in range(body.count):
+            params = dict(body.params)
+            # A pinned seed must not collapse the batch into N identical
+            # results — step it per job. Unpinned stays unpinned (provider
+            # randomizes each job independently).
+            if index > 0 and params.get("seed") is not None:
+                try:
+                    params["seed"] = int(params["seed"]) + index
+                except (TypeError, ValueError):
+                    params.pop("seed", None)
+            jobs.append(
+                engine.submit(provider=body.provider, model=body.model, modality=body.modality, params=params)
+            )
     except MediaProviderError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"job": job}
+        # Partial fan-out is fine: already-submitted jobs keep running and
+        # sit in the queue; the client surfaces the error for the rest.
+        if not jobs:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"job": jobs[0], "jobs": jobs, "error": str(exc)}
+    return {"job": jobs[0], "jobs": jobs}
 
 
 @router.get("/jobs/{job_id}")

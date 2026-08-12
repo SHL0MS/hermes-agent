@@ -196,3 +196,122 @@ def test_import_file_and_known_paths_dedupe(store, tmp_path):
     assert str(media) in store.known_result_paths()
     jobs = store.list_jobs(states=["done"])
     assert len(jobs) == 1 and jobs[0]["source"] == "agent"
+
+
+# ---------------------------------------------------------------------------
+# Batch fan-out (POST /jobs count=N) — route-level contract
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEngine:
+    """Captures engine.submit calls; returns store-shaped job dicts."""
+
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, *, provider, model, modality, params):
+        self.calls.append(params)
+        return {"id": f"job-{len(self.calls)}", "state": "queued", "params": params}
+
+
+@pytest.fixture()
+def api_client(monkeypatch):
+    fastapi = pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    api = _load("plugin_api")
+    engine = _RecordingEngine()
+    monkeypatch.setattr(api, "_engine", engine)
+    app = fastapi.FastAPI()
+    app.include_router(api.router)
+    with TestClient(app) as client:
+        yield client, engine
+
+
+def _submit_body(**overrides):
+    body = {
+        "provider": "fake",
+        "model": "fake/model",
+        "modality": "image",
+        "params": {"prompt": "a sphere"},
+    }
+    body.update(overrides)
+    return body
+
+
+def test_submit_default_count_is_one(api_client):
+    client, engine = api_client
+    response = client.post("/jobs", json=_submit_body())
+    assert response.status_code == 200
+    data = response.json()
+    assert len(engine.calls) == 1
+    # Back-compat: singular `job` retained alongside the new `jobs` array.
+    assert data["job"]["id"] == "job-1"
+    assert [j["id"] for j in data["jobs"]] == ["job-1"]
+
+
+def test_submit_fans_out_count_jobs(api_client):
+    client, engine = api_client
+    response = client.post("/jobs", json=_submit_body(count=4))
+    assert response.status_code == 200
+    assert len(engine.calls) == 4
+    assert len(response.json()["jobs"]) == 4
+    # Unpinned seed stays unpinned on every job — provider-side randomness.
+    assert all("seed" not in params for params in engine.calls)
+
+
+def test_submit_steps_pinned_seed_across_batch(api_client):
+    client, engine = api_client
+    response = client.post("/jobs", json=_submit_body(count=3, params={"prompt": "x", "seed": 100}))
+    assert response.status_code == 200
+    assert [params["seed"] for params in engine.calls] == [100, 101, 102]
+
+
+def test_submit_count_out_of_range_rejected(api_client):
+    client, engine = api_client
+    assert client.post("/jobs", json=_submit_body(count=0)).status_code == 422
+    assert client.post("/jobs", json=_submit_body(count=51)).status_code == 422
+    assert engine.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Krea image param mapping — resolution pass-through
+# ---------------------------------------------------------------------------
+
+
+def test_krea_nano_banana_pro_forwards_resolution(monkeypatch):
+    providers_mod = _load("providers")
+    adapter = providers_mod.KreaAdapter()
+    monkeypatch.setenv("KREA_API_KEY", "test-token")
+    captured = {}
+
+    def fake_request(method, path, body=None):
+        captured["path"] = path
+        captured["body"] = body
+        return {"job_id": "krea-1"}
+
+    monkeypatch.setattr(adapter, "_request", fake_request)
+    adapter.submit(
+        "google/nano-banana-pro",
+        "image",
+        {"prompt": "typography study", "aspect_ratio": "3:2", "resolution": "4K"},
+    )
+    assert captured["path"].endswith("/nano-banana-pro")
+    assert captured["body"]["resolution"] == "4K"
+    assert captured["body"]["aspect_ratio"] == "3:2"
+
+    # Out-of-catalog resolution is dropped, not forwarded to a 422.
+    adapter.submit(
+        "google/nano-banana-pro",
+        "image",
+        {"prompt": "typography study", "resolution": "8K"},
+    )
+    assert "resolution" not in captured["body"]
+
+    # krea-2 models still get their required fixed 1K regardless of input.
+    adapter.submit(
+        "krea/krea-2/medium-turbo",
+        "image",
+        {"prompt": "study", "aspect_ratio": "1:1", "resolution": "4K"},
+    )
+    assert captured["body"]["resolution"] == "1K"

@@ -61,6 +61,11 @@ type StudioMessages = {
   notifDone: string
   notifFailed: string
   notifView: string
+  count: string
+  countCustom: string
+  parameters: string
+  copyPrompt: string
+  copiedPrompt: string
 }
 
 const en: StudioMessages = {
@@ -116,7 +121,12 @@ const en: StudioMessages = {
   attachLatestEmpty: 'No finished generation yet.',
   notifDone: 'Generation complete',
   notifFailed: 'Generation failed',
-  notifView: 'View'
+  notifView: 'View',
+  count: 'Generations',
+  countCustom: 'Custom',
+  parameters: 'Parameters',
+  copyPrompt: 'Copy prompt',
+  copiedPrompt: 'Prompt copied'
 }
 
 const ja: StudioMessages = {
@@ -172,7 +182,12 @@ const ja: StudioMessages = {
   attachLatestEmpty: '完了した生成はまだありません。',
   notifDone: '生成が完了しました',
   notifFailed: '生成に失敗しました',
-  notifView: '表示'
+  notifView: '表示',
+  count: '生成数',
+  countCustom: 'カスタム',
+  parameters: 'パラメータ',
+  copyPrompt: 'プロンプトをコピー',
+  copiedPrompt: 'プロンプトをコピーしました'
 }
 
 const zh: StudioMessages = {
@@ -228,7 +243,12 @@ const zh: StudioMessages = {
   attachLatestEmpty: '还没有完成的生成。',
   notifDone: '生成完成',
   notifFailed: '生成失败',
-  notifView: '查看'
+  notifView: '查看',
+  count: '生成数量',
+  countCustom: '自定义',
+  parameters: '参数',
+  copyPrompt: '复制提示词',
+  copiedPrompt: '已复制提示词'
 }
 
 const zhHant: StudioMessages = {
@@ -284,7 +304,12 @@ const zhHant: StudioMessages = {
   attachLatestEmpty: '還沒有完成的生成。',
   notifDone: '生成完成',
   notifFailed: '生成失敗',
-  notifView: '檢視'
+  notifView: '檢視',
+  count: '生成數量',
+  countCustom: '自訂',
+  parameters: '參數',
+  copyPrompt: '複製提示詞',
+  copiedPrompt: '已複製提示詞'
 }
 
 export const STUDIO_LOCALES: PluginLocaleBundles = { en, ja, zh, 'zh-hant': zhHant }

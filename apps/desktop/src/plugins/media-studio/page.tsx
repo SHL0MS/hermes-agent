@@ -48,6 +48,7 @@ import {
   submitJob
 } from './api'
 import { useStudio } from './i18n'
+import { clampCount, jobParamEntries, jobPrompt } from './job-params'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,10 @@ interface CreateState {
   startImage: string
 }
 
+const COUNT_PRESETS = [1, 2, 4] as const
+const COUNT_CUSTOM = 'custom'
+const MAX_COUNT = 50
+
 const CreatePanel: FC<{
   modalityFilter: ModalityFilter
   onProviderCatalog: (providers: ProviderInfo[]) => void
@@ -142,6 +147,10 @@ const CreatePanel: FC<{
     seed: '',
     audio: true
   })
+
+  // Batch count: preset 1/2/4 or a free-typed custom N (fanned out server-side).
+  const [countChoice, setCountChoice] = useState<string>('1')
+  const [customCount, setCustomCount] = useState('8')
 
   const patch = useCallback((update: Partial<typeof state>) => setState(prev => ({ ...prev, ...update })), [])
 
@@ -212,6 +221,7 @@ const CreatePanel: FC<{
   })
 
   const canSubmit = Boolean(state.prompt.trim() && provider?.available && model) && !submit.isPending
+  const count = countChoice === COUNT_CUSTOM ? clampCount(customCount, MAX_COUNT) : Number(countChoice)
 
   const onGenerate = () => {
     if (!canSubmit || !model || !provider) {
@@ -248,7 +258,7 @@ const CreatePanel: FC<{
       params.image_url = startImage
     }
 
-    submit.mutate({ modality: model.modality, model: model.id, params, provider: provider.name })
+    submit.mutate({ count, modality: model.modality, model: model.id, params, provider: provider.name })
   }
 
   if (providers.length === 0) {
@@ -394,6 +404,27 @@ const CreatePanel: FC<{
             />
           </label>
         )}
+        <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+          {k.count}
+          <span className="flex items-center gap-1.5">
+            <SegmentedControl
+              onChange={setCountChoice}
+              options={[
+                ...COUNT_PRESETS.map(n => ({ id: String(n), label: String(n) })),
+                { id: COUNT_CUSTOM, label: k.countCustom }
+              ]}
+              value={countChoice}
+            />
+            {countChoice === COUNT_CUSTOM && (
+              <Input
+                className="h-8 w-16"
+                inputMode="numeric"
+                onChange={event => setCustomCount(event.target.value.replace(/[^0-9]/g, ''))}
+                value={customCount}
+              />
+            )}
+          </span>
+        </label>
         {supports.audio && (
           <label className="flex items-center gap-2 pb-1.5 text-[0.6875rem] text-(--ui-text-tertiary)">
             <Switch checked={state.audio} onCheckedChange={checked => patch({ audio: checked })} />
@@ -410,7 +441,7 @@ const CreatePanel: FC<{
             ) : (
               <span className="flex items-center gap-2">
                 <Codicon name="sparkle" />
-                {k.generate}
+                {count > 1 ? `${k.generate} ×${count}` : k.generate}
                 <kbd className="text-[0.625rem] text-(--ui-text-quaternary)">⌘⏎</kbd>
               </span>
             )}
@@ -453,9 +484,30 @@ const QueueRow: FC<{ job: MediaJob; label: string; onCancel: (id: string) => voi
 // ---------------------------------------------------------------------------
 
 const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) => {
+  const k = useStudio()
   const [src, setSrc] = useState('')
+  const [copied, setCopied] = useState(false)
   const path = job.result_paths[0]
   const isVideo = job.modality === 'video'
+  const prompt = jobPrompt(job)
+  const entries = jobParamEntries(job)
+
+  const paramLabel: Record<(typeof entries)[number]['key'], string> = {
+    aspectRatio: k.aspectRatio,
+    audio: k.audio,
+    duration: k.duration,
+    negativePrompt: k.negativePrompt,
+    resolution: k.resolution,
+    seed: k.seed,
+    startImage: k.startImage
+  }
+
+  const copyPrompt = () => {
+    void navigator.clipboard.writeText(prompt).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    })
+  }
 
   useEffect(() => {
     if (isVideo || !path) {
@@ -495,13 +547,43 @@ const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) 
       onClick={onClose}
       role="presentation"
     >
-      {isVideo ? (
-        <video autoPlay className="max-h-full max-w-full rounded-lg" controls src={mediaVideoUrl(path)} />
-      ) : src ? (
-        <img alt={String(job.params.prompt ?? '')} className="max-h-full max-w-full rounded-lg object-contain" src={src} />
-      ) : (
-        <GlyphSpinner className="text-[1.5rem]" />
-      )}
+      <div
+        className="flex max-h-full max-w-full flex-col items-center gap-3"
+        onClick={event => event.stopPropagation()}
+        role="presentation"
+      >
+        {isVideo ? (
+          <video autoPlay className="min-h-0 max-w-full flex-1 rounded-lg" controls src={mediaVideoUrl(path)} />
+        ) : src ? (
+          <img alt={prompt} className="min-h-0 max-w-full flex-1 rounded-lg object-contain" src={src} />
+        ) : (
+          <GlyphSpinner className="text-[1.5rem]" />
+        )}
+
+        <div className="w-full max-w-2xl rounded-lg bg-black/70 p-3 text-white backdrop-blur">
+          {prompt && (
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 whitespace-pre-wrap text-[0.75rem] leading-relaxed">{prompt}</p>
+              <Tip label={copied ? k.copiedPrompt : k.copyPrompt}>
+                <Button className="shrink-0 text-white" onClick={copyPrompt} size="icon-sm" variant="ghost">
+                  <Codicon name={copied ? 'check' : 'copy'} />
+                </Button>
+              </Tip>
+            </div>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.625rem] text-white/70">
+            <span className="rounded bg-white/10 px-1.5 py-0.5">
+              {job.provider} · {job.model.split('/').pop()}
+            </span>
+            {entries.map(entry => (
+              <span className="rounded bg-white/10 px-1.5 py-0.5" key={entry.key}>
+                {paramLabel[entry.key]}: {entry.seconds !== undefined ? k.seconds(entry.seconds) : entry.value}
+              </span>
+            ))}
+            <span className="ml-auto text-white/50">{new Date(job.created_at * 1000).toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -517,6 +599,7 @@ const LibraryCard: FC<{
   const k = useStudio()
   const failed = job.state === 'failed' || job.state === 'expired'
   const thumb = job.thumb_paths[0] ?? job.result_paths[0]
+  const prompt = jobPrompt(job)
 
   const stateLabel: Record<MediaJob['state'], string> = {
     cancelled: k.stateCancelled,
@@ -558,6 +641,12 @@ const LibraryCard: FC<{
         <span className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[0.625rem] text-white">
           {k.agentSource}
         </span>
+      )}
+
+      {prompt && !failed && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-2 pb-6 opacity-0 transition-opacity group-hover:opacity-100">
+          <p className="line-clamp-2 text-[0.6875rem] leading-snug text-white/90">{prompt}</p>
+        </div>
       )}
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-0.5 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">

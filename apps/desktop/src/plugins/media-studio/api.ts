@@ -50,6 +50,8 @@ export interface SubmitBody {
   model: string
   modality: 'image' | 'video'
   params: Record<string, unknown>
+  /** Fan out N identical jobs (server steps a pinned seed per job). */
+  count?: number
 }
 
 type Rest = <T>(path: string, opts?: PluginRestOptions) => Promise<T>

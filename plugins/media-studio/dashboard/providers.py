@@ -394,7 +394,9 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "modality": "image",
         "tier": "quality",
         "path": "/generate/image/google/nano-banana-pro",
-        "supports": {"aspect_ratio": True},
+        "supports": {"aspect_ratio": True, "resolution": True},
+        "aspect_ratios": ["21:9", "1:1", "4:3", "3:2", "2:3", "5:4", "4:5", "3:4", "16:9", "9:16"],
+        "resolutions": ["1K", "2K", "4K"],
         "note": "Best-in-class typography and instruction following.",
     },
     {
@@ -492,7 +494,12 @@ class KreaAdapter:
                 aspect = allowed[0]
             if supports.get("aspect_ratio"):
                 body["aspect_ratio"] = aspect
+            if supports.get("resolution") and params.get("resolution"):
+                allowed_res = model.get("resolutions")
+                if not allowed_res or params["resolution"] in allowed_res:
+                    body["resolution"] = params["resolution"]
             if model["id"].startswith("krea/"):
+                # krea-2's schema requires resolution and only accepts 1K.
                 body["resolution"] = "1K"
         else:
             if supports.get("duration") and params.get("duration"):
