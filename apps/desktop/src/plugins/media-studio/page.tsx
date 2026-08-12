@@ -567,7 +567,12 @@ const QueueRow: FC<{ job: MediaJob; label: string; onCancel: (id: string) => voi
 // Library grid + lightbox
 // ---------------------------------------------------------------------------
 
-const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) => {
+const Lightbox: FC<{
+  job: MediaJob
+  onClose: () => void
+  onPrev: (() => void) | null
+  onNext: (() => void) | null
+}> = ({ job, onClose, onNext, onPrev }) => {
   const k = useStudio()
   const [src, setSrc] = useState('')
   const [copied, setCopied] = useState(false)
@@ -594,6 +599,8 @@ const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) 
   }
 
   useEffect(() => {
+    setSrc('')
+
     if (isVideo || !path) {
       return
     }
@@ -614,12 +621,28 @@ const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) 
       if (event.key === 'Escape') {
         onClose()
       }
+
+      // Arrows aimed at the video's own controls seek / adjust volume — don't
+      // also navigate the lightbox. (Escape above stays universal.)
+      const target = event.target as HTMLElement | null
+
+      if (target && ['VIDEO', 'INPUT', 'TEXTAREA'].includes(target.tagName)) {
+        return
+      }
+
+      if (event.key === 'ArrowLeft' && onPrev) {
+        onPrev()
+      }
+
+      if (event.key === 'ArrowRight' && onNext) {
+        onNext()
+      }
     }
 
     window.addEventListener('keydown', onKey)
 
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, onNext, onPrev])
 
   if (!path) {
     return null
@@ -631,15 +654,45 @@ const Lightbox: FC<{ job: MediaJob; onClose: () => void }> = ({ job, onClose }) 
       onClick={onClose}
       role="presentation"
     >
+      {onPrev && (
+        <Tip label={k.lightboxPrev}>
+          <Button
+            className="absolute left-3 top-1/2 z-10 -translate-y-1/2 bg-black/50 text-white hover:bg-black/70"
+            onClick={event => {
+              event.stopPropagation()
+              onPrev()
+            }}
+            size="icon"
+            variant="ghost"
+          >
+            <Codicon name="chevron-left" size="1.25rem" />
+          </Button>
+        </Tip>
+      )}
+      {onNext && (
+        <Tip label={k.lightboxNext}>
+          <Button
+            className="absolute right-3 top-1/2 z-10 -translate-y-1/2 bg-black/50 text-white hover:bg-black/70"
+            onClick={event => {
+              event.stopPropagation()
+              onNext()
+            }}
+            size="icon"
+            variant="ghost"
+          >
+            <Codicon name="chevron-right" size="1.25rem" />
+          </Button>
+        </Tip>
+      )}
       <div
         className="flex max-h-full max-w-full flex-col items-center gap-3"
         onClick={event => event.stopPropagation()}
         role="presentation"
       >
         {isVideo ? (
-          <video autoPlay className="min-h-0 max-w-full flex-1 rounded-lg" controls src={mediaVideoUrl(path)} />
+          <video autoPlay className="min-h-0 max-w-full flex-1 rounded-lg" controls key={job.id} src={mediaVideoUrl(path)} />
         ) : src ? (
-          <img alt={prompt} className="min-h-0 max-w-full flex-1 rounded-lg object-contain" src={src} />
+          <img alt={prompt} className="min-h-0 max-w-full flex-1 rounded-lg object-contain" key={job.id} src={src} />
         ) : (
           <GlyphSpinner className="text-[1.5rem]" />
         )}
@@ -800,6 +853,19 @@ export const MediaStudioPage: FC = () => {
   const library = jobs.filter(job => isTerminal(job.state) && job.state !== 'cancelled')
   const filtered = filter === 'all' ? library : library.filter(job => job.modality === filter)
 
+  // Lightbox prev/next walk the filtered grid in visual order, skipping rows
+  // with nothing to show (failed/expired). Derived from the live list so the
+  // open viewer tracks reality: the current row's fresh state renders (falling
+  // back to the opening snapshot if the row vanished), and the arrows hide at
+  // the ends.
+  const viewable = filtered.filter(job => job.result_paths.length > 0)
+  const lightboxIndex = lightbox ? viewable.findIndex(job => job.id === lightbox.id) : -1
+  const lightboxJob = lightboxIndex >= 0 ? viewable[lightboxIndex] : null
+  const lightboxPrev = lightboxIndex > 0 ? viewable[lightboxIndex - 1] : null
+
+  const lightboxNext =
+    lightboxIndex >= 0 && lightboxIndex < viewable.length - 1 ? viewable[lightboxIndex + 1] : null
+
   const onCancel = useCallback((id: string) => {
     void cancelJob(id).then(invalidateJobs)
   }, [])
@@ -904,7 +970,14 @@ export const MediaStudioPage: FC = () => {
         )}
       </section>
 
-      {lightbox && <Lightbox job={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && (
+        <Lightbox
+          job={lightboxJob ?? lightbox}
+          onClose={() => setLightbox(null)}
+          onNext={lightboxNext ? () => setLightbox(lightboxNext) : null}
+          onPrev={lightboxPrev ? () => setLightbox(lightboxPrev) : null}
+        />
+      )}
     </div>
   )
 }

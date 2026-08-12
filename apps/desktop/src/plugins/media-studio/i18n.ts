@@ -66,6 +66,8 @@ type StudioMessages = {
   parameters: string
   copyPrompt: string
   copiedPrompt: string
+  lightboxPrev: string
+  lightboxNext: string
   keyLabel: string
   keyPlaceholder: string
   keySave: string
@@ -133,6 +135,8 @@ const en: StudioMessages = {
   parameters: 'Parameters',
   copyPrompt: 'Copy prompt',
   copiedPrompt: 'Prompt copied',
+  lightboxPrev: 'Previous (←)',
+  lightboxNext: 'Next (→)',
   keyLabel: 'API key',
   keyPlaceholder: 'Paste API key…',
   keySave: 'Save key',
@@ -200,6 +204,8 @@ const ja: StudioMessages = {
   parameters: 'パラメータ',
   copyPrompt: 'プロンプトをコピー',
   copiedPrompt: 'プロンプトをコピーしました',
+  lightboxPrev: '前へ (←)',
+  lightboxNext: '次へ (→)',
   keyLabel: 'APIキー',
   keyPlaceholder: 'APIキーを貼り付け…',
   keySave: 'キーを保存',
@@ -267,6 +273,8 @@ const zh: StudioMessages = {
   parameters: '参数',
   copyPrompt: '复制提示词',
   copiedPrompt: '已复制提示词',
+  lightboxPrev: '上一个 (←)',
+  lightboxNext: '下一个 (→)',
   keyLabel: 'API 密钥',
   keyPlaceholder: '粘贴 API 密钥…',
   keySave: '保存密钥',
@@ -334,6 +342,8 @@ const zhHant: StudioMessages = {
   parameters: '參數',
   copyPrompt: '複製提示詞',
   copiedPrompt: '已複製提示詞',
+  lightboxPrev: '上一個 (←)',
+  lightboxNext: '下一個 (→)',
   keyLabel: 'API 金鑰',
   keyPlaceholder: '貼上 API 金鑰…',
   keySave: '儲存金鑰',
