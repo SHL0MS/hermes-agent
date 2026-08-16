@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import type { ModelInfo, ProviderInfo } from './api'
 import { reconcileSelection, visibleModels } from './model-choices'
 
-const model = (id: string, modality: 'image' | 'video'): ModelInfo => ({
+const model = (id: string, modality: 'image' | 'video' | 'audio'): ModelInfo => ({
   display: id,
   id,
   modality,

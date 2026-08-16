@@ -30,6 +30,7 @@ type StudioMessages = {
   generate: string
   generating: string
   image: string
+  music: string
   video: string
   all: string
   cancel: string
@@ -81,6 +82,15 @@ type StudioMessages = {
   keySaved: string
   keyRemove: string
   keyGetAt: (host: string) => string
+  musicGenre: string
+  musicMood: string
+  musicBpm: string
+  musicKeySig: string
+  musicInstruments: string
+  musicTakes: string
+  musicVocal: string
+  musicLyrics: string
+  musicInstrumental: string
 }
 
 const en: StudioMessages = {
@@ -106,6 +116,7 @@ const en: StudioMessages = {
   generate: 'Generate',
   generating: 'Generating…',
   image: 'Image',
+  music: 'Music',
   video: 'Video',
   all: 'All',
   cancel: 'Cancel',
@@ -156,7 +167,16 @@ const en: StudioMessages = {
   keySave: 'Save key',
   keySaved: 'Key saved — provider is live',
   keyRemove: 'Remove key',
-  keyGetAt: host => `Create one at ${host}`
+  keyGetAt: host => `Create one at ${host}`,
+  musicGenre: 'Genre',
+  musicMood: 'Mood',
+  musicBpm: 'BPM',
+  musicKeySig: 'Key',
+  musicInstruments: 'Instruments',
+  musicTakes: 'Takes',
+  musicVocal: 'Vocal',
+  musicLyrics: 'Lyrics (optional — auto-written if blank)',
+  musicInstrumental: 'Instrumental (no vocals)'
 }
 
 const ja: StudioMessages = {
@@ -182,6 +202,7 @@ const ja: StudioMessages = {
   generate: '生成',
   generating: '生成中…',
   image: '画像',
+  music: '音楽',
   video: '動画',
   all: 'すべて',
   cancel: 'キャンセル',
@@ -232,7 +253,16 @@ const ja: StudioMessages = {
   keySave: 'キーを保存',
   keySaved: 'キーを保存しました — プロバイダーが利用可能になりました',
   keyRemove: 'キーを削除',
-  keyGetAt: host => `${host} で作成できます`
+  keyGetAt: host => `${host} で作成できます`,
+  musicGenre: 'ジャンル',
+  musicMood: 'ムード',
+  musicBpm: 'BPM',
+  musicKeySig: 'キー',
+  musicInstruments: '楽器',
+  musicTakes: 'テイク数',
+  musicVocal: 'ボーカル',
+  musicLyrics: '歌詞（任意 — 空欄なら自動生成）',
+  musicInstrumental: 'インストゥルメンタル（ボーカルなし）'
 }
 
 const zh: StudioMessages = {
@@ -258,6 +288,7 @@ const zh: StudioMessages = {
   generate: '生成',
   generating: '生成中…',
   image: '图像',
+  music: '音乐',
   video: '视频',
   all: '全部',
   cancel: '取消',
@@ -308,7 +339,16 @@ const zh: StudioMessages = {
   keySave: '保存密钥',
   keySaved: '密钥已保存 — 提供商已可用',
   keyRemove: '删除密钥',
-  keyGetAt: host => `在 ${host} 创建`
+  keyGetAt: host => `在 ${host} 创建`,
+  musicGenre: '风格',
+  musicMood: '情绪',
+  musicBpm: 'BPM',
+  musicKeySig: '调性',
+  musicInstruments: '乐器',
+  musicTakes: '版本数',
+  musicVocal: '人声',
+  musicLyrics: '歌词（可选 — 留空自动生成）',
+  musicInstrumental: '纯音乐（无人声）'
 }
 
 const zhHant: StudioMessages = {
@@ -334,6 +374,7 @@ const zhHant: StudioMessages = {
   generate: '生成',
   generating: '生成中…',
   image: '影像',
+  music: '音樂',
   video: '影片',
   all: '全部',
   cancel: '取消',
@@ -384,7 +425,16 @@ const zhHant: StudioMessages = {
   keySave: '儲存金鑰',
   keySaved: '金鑰已儲存 — 供應商已可用',
   keyRemove: '刪除金鑰',
-  keyGetAt: host => `在 ${host} 建立`
+  keyGetAt: host => `在 ${host} 建立`,
+  musicGenre: '風格',
+  musicMood: '情緒',
+  musicBpm: 'BPM',
+  musicKeySig: '調性',
+  musicInstruments: '樂器',
+  musicTakes: '版本數',
+  musicVocal: '人聲',
+  musicLyrics: '歌詞（可選 — 留空自動生成）',
+  musicInstrumental: '純音樂（無人聲）'
 }
 
 export const STUDIO_LOCALES: PluginLocaleBundles = { en, ja, zh, 'zh-hant': zhHant }

@@ -10,10 +10,23 @@ import { type PluginRestOptions, queryClient } from '@hermes/plugin-sdk'
 export interface ModelInfo {
   id: string
   display: string
-  modality: 'image' | 'video'
+  modality: 'image' | 'video' | 'audio'
   tier: string
   note?: string
-  supports: Record<string, boolean>
+  supports: Record<string, boolean> & {
+    /** MiniMax music brief fields; presence = the create panel shows them. */
+    lyrics?: boolean
+    genre?: boolean
+    mood?: boolean
+    bpm?: boolean
+    key?: boolean
+    vocal?: boolean
+    instrumental?: boolean
+    instrumentation?: boolean
+    iterations?: boolean
+    mode?: boolean
+    reference_audio_url?: boolean
+  }
   /** Deviations from the defaults (prompt required, image optional). */
   requires?: { prompt?: boolean; image_url?: boolean }
   aspect_ratios?: string[]
@@ -40,7 +53,7 @@ export interface MediaJob {
   id: string
   provider: string
   model: string
-  modality: 'image' | 'video'
+  modality: 'image' | 'video' | 'audio'
   params: Record<string, unknown>
   state: JobState
   /** Originating chat session (provenance) — set on agent rows and on studio
@@ -58,7 +71,7 @@ export interface MediaJob {
 export interface SubmitBody {
   provider: string
   model: string
-  modality: 'image' | 'video'
+  modality: 'image' | 'video' | 'audio'
   params: Record<string, unknown>
   /** Fan out N identical jobs (server steps a pinned seed per job). */
   count?: number
@@ -168,6 +181,48 @@ export async function latestResult(modality?: 'image' | 'video'): Promise<MediaJ
 
 export function submitJob(body: SubmitBody): Promise<{ job: MediaJob }> {
   return call('/jobs', { body, method: 'POST' })
+}
+
+// ---------------------------------------------------------------------------
+// Music interactive (non-job) endpoints
+// ---------------------------------------------------------------------------
+
+export interface LyricsResult {
+  song_title: string
+  style_tags: string
+  lyrics: string
+}
+
+export function musicLyrics(body: {
+  prompt: string
+  mode?: 'write_full_song' | 'edit'
+  lyrics?: string
+  title?: string
+}): Promise<LyricsResult> {
+  return call('/music/lyrics', { body, method: 'POST' })
+}
+
+export interface StructureSegment {
+  start: number
+  end: number
+  label: string
+}
+
+export interface CoverPreprocessResult {
+  cover_feature_id: string
+  formatted_lyrics: string
+  structure: { segments?: StructureSegment[]; num_segments?: number }
+  audio_duration?: number
+  trace_id?: string
+}
+
+export function coverPreprocess(reference: string): Promise<CoverPreprocessResult> {
+  return call('/music/cover/preprocess', { body: { reference }, method: 'POST' })
+}
+
+/** Reference shorthand: a library job's result as a cover/derive source. */
+export function jobReference(jobId: string): string {
+  return `job:${jobId}`
 }
 
 export function cancelJob(id: string): Promise<{ ok: boolean }> {

@@ -136,13 +136,14 @@ def _index_agent_media_throttled() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Agent-output indexing: pick up files the agent's own image/video tools
-# materialized under $HERMES_HOME/cache/{images,videos}, so chat generations
-# appear in the library with zero tool changes.
+# Agent-output indexing: pick up files the agent's own image/video/music tools
+# materialized under $HERMES_HOME/cache/{images,videos,music}, so chat
+# generations appear in the library with zero tool changes.
 # ---------------------------------------------------------------------------
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 _VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv"}
+_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 # The agent's save_url_* helpers stream straight to the final path (no
 # tmp+rename), so a file whose mtime is very fresh may still be mid-write.
 # Its mtime advances with every chunk; once it has been quiet this long we
@@ -157,7 +158,11 @@ def _index_agent_media(store) -> int:
     known = store.known_result_paths()
     imported = 0
     now = time.time()
-    for sub, exts, modality in (("images", _IMAGE_EXTS, "image"), ("videos", _VIDEO_EXTS, "video")):
+    for sub, exts, modality in (
+        ("images", _IMAGE_EXTS, "image"),
+        ("videos", _VIDEO_EXTS, "video"),
+        ("music", _AUDIO_EXTS, "audio"),
+    ):
         directory = cache / sub
         if not directory.is_dir():
             continue
@@ -225,13 +230,28 @@ def _index_agent_media(store) -> int:
 class SubmitBody(BaseModel):
     provider: str
     model: str
-    modality: str = Field(pattern="^(image|video)$")
+    modality: str = Field(pattern="^(image|video|audio)$")
     params: Dict[str, Any] = Field(default_factory=dict)
     count: int = Field(1, ge=1, le=50, description="fan out N identical jobs (seed varied per job)")
 
 
 class ProviderKeyBody(BaseModel):
     key: str = Field(min_length=1, max_length=512)
+
+
+class LyricsEditBody(BaseModel):
+    provider: str = "minimax"
+    mode: str = Field(default="write_full_song", pattern="^(write_full_song|edit)$")
+    prompt: str = ""
+    lyrics: Optional[str] = None
+    title: Optional[str] = None
+
+
+class CoverPreprocessBody(BaseModel):
+    provider: str = "minimax"
+    # Either a public URL, a local media-cache file path, or a job id whose
+    # result file we inline as base64 (MiniMax accepts audio_base64 for local).
+    reference: str
 
 
 # BYOK: which providers accept a pasted key, and which env var it lands in.
@@ -241,6 +261,7 @@ class ProviderKeyBody(BaseModel):
 # is explained.
 PROVIDER_KEY_VARS: Dict[str, str] = {
     "krea": "KREA_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
 }
 
 
@@ -248,6 +269,79 @@ PROVIDER_KEY_VARS: Dict[str, str] = {
 # Routes
 # ---------------------------------------------------------------------------
 
+def _minimax_adapter():
+    """The live MiniMax adapter from the engine, or a 4xx JSON-able error."""
+    engine = _ensure_engine()
+    adapter = engine.providers.get("minimax")
+    if adapter is None:
+        raise HTTPException(status_code=404, detail="MiniMax provider not registered")
+    if not adapter.is_available():
+        raise HTTPException(status_code=400, detail=adapter.availability_hint())
+    return adapter
+
+
+def _resolve_reference_input(reference: str) -> Dict[str, str]:
+    """Map a UI 'reference' (public URL | local path under the music cache |
+    a media_studio job id) to MiniMax fields. Local files ride audio_base64."""
+    ref = (reference or "").strip()
+    if not ref:
+        raise HTTPException(status_code=400, detail="reference is required")
+    if ref.startswith(("http://", "https://")):
+        return {"audio_url": ref}
+    if ref.startswith("job:"):
+        job_id = ref[4:]
+        job = _store.get_job(job_id) if _store else None
+        if not job or not job["result_paths"]:
+            raise HTTPException(status_code=404, detail=f"job {job_id} has no result file")
+        path = Path(job["result_paths"][0])
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="job result file missing on disk")
+        import base64
+
+        return {"audio_base64": base64.b64encode(path.read_bytes()).decode()}
+    # local path: confine to the media cache so a token can't exfiltrate disk
+    target = Path(ref).resolve()
+    music_root = (_hermes_home() / "cache" / "music").resolve()
+    if not str(target).startswith(str(music_root)) or not target.is_file():
+        raise HTTPException(status_code=403, detail="reference must be a URL, a job id, or a music-cache file")
+    import base64
+
+    data = target.read_bytes()
+    if len(data) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="reference audio exceeds 50MB")
+    return {"audio_base64": base64.b64encode(data).decode()}
+
+
+@router.post("/music/lyrics")
+def music_lyrics(body: LyricsEditBody) -> Dict[str, Any]:
+    """Write or edit lyrics against the provider's lyrics_generation endpoint.
+    edit mode keeps `lyrics` as the working text; prompt carries direction."""
+    adapter = _minimax_adapter()
+    try:
+        return adapter.lyrics_generate(
+            prompt=body.prompt,
+            mode=body.mode,
+            lyrics=body.lyrics,
+            title=body.title,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/music/cover/preprocess")
+def music_cover_preprocess(body: CoverPreprocessBody) -> Dict[str, Any]:
+    """FREE analysis of a reference track: cover_feature_id (24h) + ASR lyrics
+    + timestamped structure. miniMax accepts audio_url or audio_base64; local
+    files/jobs inline as base64."""
+    adapter = _minimax_adapter()
+    fields = _resolve_reference_input(body.reference)
+    try:
+        return adapter.cover_preprocess(
+            audio_url=fields.get("audio_url"),
+            audio_base64=fields.get("audio_base64"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @router.get("/health")
 def health() -> Dict[str, Any]:
@@ -418,7 +512,13 @@ def _allowed_media_roots() -> List[Path]:
     from hermes_constants import get_hermes_home
 
     cache = get_hermes_home() / "cache"
-    return [cache / "images", cache / "videos", cache / "media_thumbs"]
+    return [cache / "images", cache / "videos", cache / "music", cache / "media_thumbs"]
+
+
+def _hermes_home() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home()
 
 
 _MEDIA_TYPES = {
@@ -431,6 +531,12 @@ _MEDIA_TYPES = {
     ".webm": "video/webm",
     ".mov": "video/quicktime",
     ".mkv": "video/x-matroska",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".aac": "audio/aac",
 }
 
 

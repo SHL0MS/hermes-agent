@@ -27,6 +27,12 @@ export function modelAcceptsImage(model: ModelInfo | null | undefined): boolean 
   return model?.supports?.image_url === true
 }
 
+/** Audio library cards can seed a cover/reference (MiniMax music-cover and
+ *  any future audio model declares it via supports.audio_url). */
+export function modelAcceptsAudio(model: ModelInfo | null | undefined): boolean {
+  return model?.supports?.audio_url === true
+}
+
 /** Why a candidate file can't be the start image right now; null = fine. */
 export function startImageIssue(
   model: ModelInfo | null | undefined,

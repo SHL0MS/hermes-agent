@@ -81,7 +81,7 @@ const plugin: HermesPlugin = {
   id: 'media-studio',
   name: 'Media Studio',
   description:
-    'Generative media workspace — generate images and video against portal providers (fal, Krea) with a durable job queue and a library of everything generated.',
+    'Generative media workspace — generate images, video, and music against portal providers (fal, Krea, MiniMax) with a durable job queue and a library of everything generated.',
   register(ctx) {
     ctx.i18n.register(STUDIO_LOCALES)
     ctx.onDispose(bindApi(ctx.rest, ctx.socket))
@@ -185,7 +185,7 @@ const plugin: HermesPlugin = {
         data: {
           id: 'media-studio.open',
           action: 'media-studio.open',
-          keywords: ['media', 'studio', 'generate', 'image', 'video', 'fal', 'krea'],
+          keywords: ['media', 'studio', 'generate', 'image', 'video', 'music', 'fal', 'krea', 'minimax'],
           label: t('paletteOpen'),
           run: openStudio
         } satisfies PaletteContribution

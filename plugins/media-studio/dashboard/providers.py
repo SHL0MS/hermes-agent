@@ -1172,4 +1172,26 @@ class KreaAdapter:
 
 
 def build_providers() -> Dict[str, Any]:
-    return {adapter.name: adapter for adapter in (FalAdapter(), KreaAdapter())}
+    providers: Dict[str, Any] = {a.name: a for a in (FalAdapter(), KreaAdapter())}
+    try:
+        from .providers_minimax import MinimaxMusicAdapter
+    except ImportError:  # loaded standalone by the dashboard mounter (no package)
+        import importlib.util as _ilu
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        _spec = _ilu.spec_from_file_location(
+            "hermes_media_studio_providers_minimax",
+            _Path(__file__).parent / "providers_minimax.py",
+        )
+        if _spec and _spec.loader:
+            _mod = _ilu.module_from_spec(_spec)
+            _sys.modules[_spec.name] = _mod
+            _spec.loader.exec_module(_mod)
+            MinimaxMusicAdapter = _mod.MinimaxMusicAdapter
+        else:  # pragma: no cover
+            MinimaxMusicAdapter = None
+    if MinimaxMusicAdapter is not None:
+        minimax = MinimaxMusicAdapter()
+        providers[minimax.name] = minimax
+    return providers

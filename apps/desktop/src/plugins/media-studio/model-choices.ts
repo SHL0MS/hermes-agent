@@ -7,7 +7,7 @@
 
 import type { ModelInfo, ProviderInfo } from './api'
 
-export type ModalityFilter = 'all' | 'image' | 'video'
+export type ModalityFilter = 'all' | 'image' | 'video' | 'audio'
 
 /** Models a provider may offer under the active modality filter. */
 export function visibleModels(models: ModelInfo[], filter: ModalityFilter): ModelInfo[] {

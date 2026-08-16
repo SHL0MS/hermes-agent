@@ -13,9 +13,10 @@ Design notes
 * Poll loops are BOUNDED: coarse interval, monotonic wall-clock deadline.
   Every job ends in a terminal state (done / failed / cancelled / expired).
 * Results MATERIALIZE locally at completion (provider CDN URLs expire).
-  Images land in ``cache/images/``, video in ``cache/videos/`` — the same
-  directories the agent's own tools write to, so the library indexer treats
-  both sources uniformly. Thumbnails live in ``cache/media_thumbs/``.
+  Images land in ``cache/images/``, video in ``cache/videos/``, audio in
+  ``cache/music/`` — the same directories the agent's own tools write to,
+  so the library indexer treats both sources uniformly. Thumbnails live
+  in ``cache/media_thumbs/``.
 """
 
 from __future__ import annotations
@@ -307,11 +308,17 @@ THUMB_EDGE = 480
 
 
 def make_thumbnail(source: Path, modality: str) -> Optional[str]:
-    """Write a small preview beside the grid's needs; never raise."""
+    """Write a small preview beside the grid's needs; never raise.
+
+    Audio gets a procedural cover so the library grid isn't a grey box:
+    the first 2s of PCM rendered as a dark waveform strip on a deep
+    indigo/purple gradient (musical, on-brand, no noise textures)."""
     try:
         out = thumbs_dir() / f"{source.stem}_thumb.jpg"
         if out.exists():
             return str(out)
+        if modality == "audio":
+            return _make_audio_thumbnail(source, out)
         if modality == "video":
             import subprocess
 
@@ -332,6 +339,52 @@ def make_thumbnail(source: Path, modality: str) -> Optional[str]:
         return str(out)
     except Exception as exc:  # noqa: BLE001 — thumbs are best-effort
         logger.debug("media_studio: thumbnail failed for %s: %s", source, exc)
+        return None
+
+
+def _make_audio_thumbnail(source: Path, out: Path) -> Optional[str]:
+    """Procedural cover for audio: real PCM amplitude (first 2 s, ffmpeg-decoded)
+    as a center-out dark waveform over a deep indigo gradient."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-v", "error", "-t", "2", "-i", str(source),
+             "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+            capture_output=True, timeout=60,
+        )
+        pcm = proc.stdout
+        if proc.returncode != 0 or len(pcm) < 200:
+            return None
+        from PIL import Image, ImageDraw
+
+        W, H = THUMB_EDGE, THUMB_EDGE
+        img = Image.new("RGB", (W, H))
+        # Vertical gradient: deep indigo top -> darker violet bottom.
+        top, bottom = (30, 27, 75), (12, 10, 38)
+        for y in range(H):
+            t = y / max(1, H - 1)
+            color = tuple(round(a + (b - a) * t) for a, b in zip(top, bottom))
+            ImageDraw.Draw(img).line([(0, y), (W, y)], fill=color)
+        # Waveform from actual amplitude.
+        import array
+
+        samples = array.array("h")
+        samples.frombytes(pcm[: (len(pcm) // 2) * 2])
+        n = len(samples)
+        draw = ImageDraw.Draw(img)
+        mid = H // 2
+        accent = (167, 139, 250)  # violet-400
+        for x in range(W):
+            chunk = samples[(x * n) // W : ((x + 1) * n) // W] or [0]
+            peak = max(abs(v) for v in chunk) / 32768.0
+            half = max(1, round(peak * (H * 0.42)))
+            shade = tuple(round(c * (0.55 + 0.45 * peak)) for c in accent)
+            draw.line([(x, mid - half), (x, mid + half)], fill=shade)
+        img.save(out, "JPEG", quality=85)
+        return str(out)
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.debug("media_studio: audio thumbnail failed for %s: %s", source, exc)
         return None
 
 
@@ -477,6 +530,16 @@ class MediaEngine:
 
     @staticmethod
     def _materialize(url: str, modality: str, provider: str) -> str:
+        if modality == "audio":
+            import urllib.request
+
+            music_dir = _hermes_home() / "cache" / "music"
+            music_dir.mkdir(parents=True, exist_ok=True)
+            name = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1] or "song.mp3"
+            target = music_dir / f"studio_{provider}_{name}"
+            with urllib.request.urlopen(url, timeout=300) as resp:
+                target.write_bytes(resp.read())
+            return str(target)
         if modality == "video":
             from agent.video_gen_provider import save_url_video
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MediaJob } from './api'
-import { clampCount, jobParamEntries, jobPrompt } from './job-params'
+import { clampCount, jobParamEntries, jobPrompt, musicBriefParams } from './job-params'
 
 function job(params: Record<string, unknown>): MediaJob {
   return {
@@ -77,5 +77,59 @@ describe('clampCount', () => {
     expect(clampCount('junk')).toBe(1)
     expect(clampCount('999')).toBe(50)
     expect(clampCount('7', 4)).toBe(4)
+  })
+})
+
+describe('musicBriefParams', () => {
+  const brief = {
+    genre: 'dark synthpop',
+    mood: 'bittersweet',
+    instrumentation: 'analog pads, 808 kick',
+    vocal: 'breathy female alto',
+    musicKey: 'C minor',
+    lyrics: '[Verse]\nrain on glass',
+    bpm: '118',
+    instrumental: false,
+    iterations: '2'
+  }
+
+  it('forwards the full brief with vocals on', () => {
+    expect(musicBriefParams(brief)).toEqual({
+      genre: 'dark synthpop',
+      mood: 'bittersweet',
+      instrumentation: 'analog pads, 808 kick',
+      vocal: 'breathy female alto',
+      key: 'C minor',
+      lyrics: '[Verse]\nrain on glass',
+      bpm: 118,
+      iterations: 2
+    })
+  })
+
+  it('drops vocal and lyrics entirely in instrumental mode', () => {
+    const params = musicBriefParams({ ...brief, instrumental: true })
+
+    expect(params.mode).toBe('instrumental')
+    expect(params).not.toHaveProperty('vocal')
+    expect(params).not.toHaveProperty('lyrics')
+    // The rest of the brief still flows.
+    expect(params.genre).toBe('dark synthpop')
+    expect(params.bpm).toBe(118)
+  })
+
+  it('omits blank fields and clamps takes into [1, 4] with a default of 2', () => {
+    const params = musicBriefParams({
+      ...brief,
+      bpm: '',
+      genre: '  ',
+      iterations: 'junk',
+      lyrics: '',
+      mood: '',
+      vocal: ''
+    })
+
+    expect(params).toEqual({ instrumentation: 'analog pads, 808 kick', key: 'C minor', iterations: 2 })
+    expect(musicBriefParams({ ...brief, iterations: '9' }).iterations).toBe(4)
+    expect(musicBriefParams({ ...brief, iterations: '0' }).iterations).toBe(1)
   })
 })

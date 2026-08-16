@@ -40,6 +40,7 @@ import {
   fetchProviders,
   invalidateJobs,
   isTerminal,
+  jobReference,
   JOBS_KEY,
   mediaDataUrl,
   type MediaJob,
@@ -64,8 +65,9 @@ import {
   THUMB_MIN
 } from './attach'
 import { useStudio } from './i18n'
-import { clampCount, jobParamEntries, jobPrompt } from './job-params'
+import { clampCount, jobParamEntries, jobPrompt, musicBriefParams } from './job-params'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
+import { type CoverDraft, CoverPanel, LyricsEditorTools } from './MusicActions'
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -134,6 +136,16 @@ interface CreateState {
   seed: string
   audio: boolean
   startImage: string
+  /** MiniMax music brief fields (audio modality only). */
+  lyrics: string
+  genre: string
+  mood: string
+  bpm: string
+  musicKey: string
+  vocal: string
+  instrumentation: string
+  instrumental: boolean
+  iterations: string
 }
 
 const COUNT_PRESETS = [1, 2, 4] as const
@@ -228,6 +240,15 @@ const CreatePanel: FC<{
 
   useEffect(() => onProviderCatalog(providers), [onProviderCatalog, providers])
 
+  // The Provider dropdown only offers providers that serve the active
+  // modality — Music shouldn't list fal/Krea (no music models). On 'all'
+  // every provider qualifies. A provider that became irrelevant after a
+  // filter flip is still valid until reconcileSelection moves the pick.
+  const providersForFilter = useMemo(
+    () => providers.filter(p => visibleModels(p.models, modalityFilter).length > 0),
+    [modalityFilter, providers]
+  )
+
   const [state, setState] = useState<Omit<CreateState, 'startImage'>>({
     provider: '',
     modelId: '',
@@ -238,6 +259,8 @@ const CreatePanel: FC<{
     duration: '',
     seed: '',
     audio: true
+    , lyrics: '', genre: '', mood: '', bpm: '', musicKey: '', vocal: '', instrumentation: '',
+    instrumental: false, iterations: '2'
   })
 
   // Batch count: preset 1/2/4 or a free-typed custom N (fanned out server-side).
@@ -285,7 +308,18 @@ const CreatePanel: FC<{
   )
 
   const model: ModelInfo | undefined = provider?.models.find(m => m.id === state.modelId)
-  const supports = useMemo(() => model?.supports ?? {}, [model])
+  // When the modality filter excludes everything this provider serves, the
+  // model dropdown is empty and `model` is stale — zero its supports so the
+  // panel renders an honest "no X models on this provider" state instead of
+  // the previous modality's controls (the image aspect-ratio row leaking
+  // onto the Music tab was this).
+  const providerHasFilterModels = modelChoices.length > 0
+
+  const supports = useMemo(
+    () => (providerHasFilterModels ? model?.supports ?? {} : {}),
+    [model, providerHasFilterModels]
+  )
+
   const aspectChoices = model?.aspect_ratios ?? ASPECT_DEFAULTS
   const modality = model?.modality ?? 'image'
   const acceptsImage = modelAcceptsImage(model)
@@ -348,6 +382,7 @@ const CreatePanel: FC<{
   const imageRequired = model?.requires?.image_url === true
 
   const inputsSatisfied =
+    providerHasFilterModels &&
     (Boolean(state.prompt.trim()) || (!promptRequired && Boolean(startImage))) &&
     (!imageRequired || Boolean(startImage))
 
@@ -389,6 +424,12 @@ const CreatePanel: FC<{
       params.image_url = startImage
     }
 
+    if (model.modality === 'audio') {
+      // Music brief: turn the structured fields into the craft loop's brief.
+      // Instrumental mode drops vocal/lyrics — see musicBriefParams.
+      Object.assign(params, musicBriefParams(state))
+    }
+
     submit.mutate({ count, modality: model.modality, model: model.id, params, provider: provider.name })
   }
 
@@ -402,7 +443,7 @@ const CreatePanel: FC<{
         <label className="flex min-w-40 flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
           {k.provider}
           <Select onValueChange={value => {
-            const next = providers.find(p => p.name === value)
+            const next = providersForFilter.find(p => p.name === value)
             const nextModels = visibleModels(next?.models ?? [], modalityFilter)
 
             patch({ modelId: (nextModels[0] ?? next?.models[0])?.id ?? '', provider: value })
@@ -412,7 +453,7 @@ const CreatePanel: FC<{
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {providers.map(p => (
+              {providersForFilter.map(p => (
                 <SelectItem key={p.name} value={p.name}>
                   <span className="flex items-center gap-2">
                     {p.display}
@@ -432,18 +473,24 @@ const CreatePanel: FC<{
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {modelChoices.map(m => (
-                <SelectItem key={m.id} value={m.id}>
-                  <span className="flex items-center gap-2">
-                    <Codicon
-                      className="text-(--ui-text-quaternary)"
-                      name={m.modality === 'video' ? 'device-camera-video' : 'file-media'}
-                      size="0.75rem"
-                    />
-                    {m.display}
-                  </span>
-                </SelectItem>
-              ))}
+              {modelChoices.length === 0 ? (
+                <div className="px-2 py-1.5 text-[0.6875rem] text-(--ui-text-quaternary)">
+                  No {modalityFilter} models on {provider?.display ?? 'this provider'} — switch provider or filter.
+                </div>
+              ) : (
+                modelChoices.map(m => (
+                  <SelectItem key={m.id} value={m.id}>
+                    <span className="flex items-center gap-2">
+                      <Codicon
+                        className="text-(--ui-text-quaternary)"
+                        name={m.modality === 'video' ? 'device-camera-video' : m.modality === 'audio' ? 'music' : 'file-media'}
+                        size="0.75rem"
+                      />
+                      {m.display}
+                    </span>
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </label>
@@ -551,6 +598,63 @@ const CreatePanel: FC<{
           placeholder={k.negativePrompt}
           value={state.negativePrompt}
         />
+      )}
+
+      {/* Music brief: shown only for audio-modality models (MiniMax). The
+           prompt textarea above doubles as the free-form description; these
+           fields become the craft loop's structured brief. */}
+      {model?.modality === 'audio' && (
+        <div className="flex flex-col gap-3 rounded-md bg-(--ui-bg-tertiary) p-3">
+          <div className="grid grid-cols-[minmax(0,2fr)_5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2">
+            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.musicGenre}
+              <Input className="h-8" onChange={event => patch({ genre: event.target.value })} placeholder="dark synthpop" value={state.genre} />
+            </label>
+            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.musicBpm}
+              <Input className="h-8" inputMode="numeric" onChange={event => patch({ bpm: event.target.value.replace(/[^0-9]/g, '') })} placeholder="118" value={state.bpm} />
+            </label>
+            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.musicKeySig}
+              <Input className="h-8" onChange={event => patch({ musicKey: event.target.value })} placeholder="C minor" value={state.musicKey} />
+            </label>
+            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.musicMood}
+              <Input className="h-8" onChange={event => patch({ mood: event.target.value })} placeholder="bittersweet" value={state.mood} />
+            </label>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2">
+            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.musicInstruments}
+              <Input className="h-8" onChange={event => patch({ instrumentation: event.target.value })} placeholder="analog pads, 808 kick" value={state.instrumentation} />
+            </label>
+            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.musicTakes}
+              <Input className="h-8" inputMode="numeric" onChange={event => patch({ iterations: event.target.value.replace(/[^1-4]/g, '') })} value={state.iterations} />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
+            <Switch checked={state.instrumental} onCheckedChange={checked => patch({ instrumental: checked })} />
+            {k.musicInstrumental}
+          </label>
+          {!state.instrumental && (
+            <>
+              <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+                {k.musicVocal}
+                <Input className="h-8" onChange={event => patch({ vocal: event.target.value })} placeholder="breathy female alto" value={state.vocal} />
+              </label>
+              <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+                {k.musicLyrics}
+                <Textarea className="min-h-16 font-mono text-[0.6875rem]" onChange={event => patch({ lyrics: event.target.value })} placeholder="[Verse]&#10;...&#10;[Chorus]&#10;..." value={state.lyrics} />
+              </label>
+              <LyricsEditorTools
+                lyrics={state.lyrics}
+                onApplyLyrics={text => patch({ lyrics: text })}
+                onApplyTitle={() => undefined}
+              />
+            </>
+          )}
+        </div>
       )}
 
       <div className="flex flex-wrap items-end gap-3">
@@ -687,6 +791,7 @@ const Lightbox: FC<{
   const [copied, setCopied] = useState(false)
   const path = job.result_paths[0]
   const isVideo = job.modality === 'video'
+  const isAudio = job.modality === 'audio'
   const prompt = jobPrompt(job)
   const entries = jobParamEntries(job)
   // Provenance: agent rows (and agent-queued studio jobs) carry their
@@ -804,6 +909,10 @@ const Lightbox: FC<{
       >
         {isVideo ? (
           <video autoPlay className="min-h-0 max-w-full flex-1 rounded-lg" controls key={job.id} src={mediaVideoUrl(path)} />
+        ) : isAudio ? (
+          <div className="flex min-h-0 w-full max-w-2xl flex-1 flex-col items-center justify-center gap-4">
+            <audio autoPlay className="w-full" controls key={job.id} src={mediaVideoUrl(path)} />
+          </div>
         ) : src ? (
           <img alt={prompt} className="min-h-0 max-w-full flex-1 rounded-lg object-contain" key={job.id} src={src} />
         ) : (
@@ -866,7 +975,8 @@ const LibraryCard: FC<{
   onUseAsInput: (job: MediaJob) => void
   onRemove: (id: string) => void
   onRetry: (job: MediaJob) => void
-}> = ({ job, onOpen, onRemove, onRetry, onSendToChat, onUseAsInput }) => {
+  onCoverThis?: (job: MediaJob) => void
+}> = ({ job, onCoverThis, onOpen, onRemove, onRetry, onSendToChat, onUseAsInput }) => {
   const k = useStudio()
   const failed = job.state === 'failed' || job.state === 'expired'
   const thumb = job.thumb_paths[0] ?? job.result_paths[0]
@@ -953,6 +1063,21 @@ const LibraryCard: FC<{
                 </Button>
               </Tip>
             )}
+            {job.modality === 'audio' && !failed && onCoverThis && (
+              <Tip label="Cover this track">
+                <Button
+                  className="text-white"
+                  onClick={event => {
+                    event.stopPropagation()
+                    onCoverThis(job)
+                  }}
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  <Codicon name="refresh" />
+                </Button>
+              </Tip>
+            )}
             <Tip label={k.revealFile}>
               <Button
                 className="text-white"
@@ -988,6 +1113,7 @@ export const MediaStudioPage: FC = () => {
   const [filter, setFilter] = useState<ModalityFilter>('all')
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
+  const [coverDraft, setCoverDraft] = useState<CoverDraft | null>(null)
   // Thumbnail edge length (px) for the library grid — persisted.
   const [thumbSize, setThumbSizeState] = useState(loadThumbSize)
   const providersRef = useRef<ProviderInfo[]>([])
@@ -1114,7 +1240,8 @@ export const MediaStudioPage: FC = () => {
           options={[
             { id: 'all' as const, label: k.all },
             { id: 'image' as const, label: k.image },
-            { id: 'video' as const, label: k.video }
+            { id: 'video' as const, label: k.video },
+            { id: 'audio' as const, label: k.music }
           ]}
           value={filter}
         />
@@ -1129,6 +1256,13 @@ export const MediaStudioPage: FC = () => {
         onStartImage={setStartImage}
         startImage={startImage}
       />
+
+      {coverDraft && (
+        <CoverPanel
+          draft={coverDraft}
+          onClose={() => setCoverDraft(null)}
+        />
+      )}
 
       {active.length > 0 && (
         <section className="flex flex-col gap-2">
@@ -1177,6 +1311,13 @@ export const MediaStudioPage: FC = () => {
               <LibraryCard
                 job={job}
                 key={job.id}
+                onCoverThis={job1 => {
+                  setCoverDraft({
+                    reference: jobReference(job1.id),
+                    sourceTitle: String(job1.params.prompt ?? 'track').slice(0, 60)
+                  })
+                  window.scrollTo({ behavior: 'smooth', top: 0 })
+                }}
                 onOpen={setLightbox}
                 onRemove={onRemove}
                 onRetry={onRetry}

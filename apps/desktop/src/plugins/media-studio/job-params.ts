@@ -101,3 +101,51 @@ export function clampCount(raw: string, max = 50): number {
 
   return Math.min(parsed, max)
 }
+
+/** The music create-form fields that feed the craft loop's brief. */
+export interface MusicBrief {
+  genre: string
+  mood: string
+  instrumentation: string
+  vocal: string
+  musicKey: string
+  lyrics: string
+  bpm: string
+  instrumental: boolean
+  iterations: string
+}
+
+/** Submit params for a music brief. Instrumental mode drops the vocal and
+ *  lyrics fields entirely — sending them alongside `mode: 'instrumental'`
+ *  hands the model contradictory directions. */
+export function musicBriefParams(brief: MusicBrief): Record<string, unknown> {
+  const params: Record<string, unknown> = {}
+
+  if (brief.genre.trim()) {params.genre = brief.genre.trim()}
+
+  if (brief.mood.trim()) {params.mood = brief.mood.trim()}
+
+  if (brief.instrumentation.trim()) {params.instrumentation = brief.instrumentation.trim()}
+
+  if (brief.musicKey.trim()) {params.key = brief.musicKey.trim()}
+
+  if (brief.bpm.trim()) {
+    const bpm = Number(brief.bpm)
+
+    if (Number.isFinite(bpm) && bpm > 0) {params.bpm = bpm}
+  }
+
+  if (brief.instrumental) {
+    params.mode = 'instrumental'
+  } else {
+    if (brief.vocal.trim()) {params.vocal = brief.vocal.trim()}
+
+    if (brief.lyrics.trim()) {params.lyrics = brief.lyrics.trim()}
+  }
+
+  const it = Number(brief.iterations)
+
+  params.iterations = Number.isFinite(it) ? Math.max(1, Math.min(4, it)) : 2
+
+  return params
+}
