@@ -36,7 +36,7 @@ except ImportError:  # standalone dashboard load (no package context)
 
 logger = logging.getLogger(__name__)
 
-_API_DIRECT = "https://api.minimax.io/v1"
+_API_DIRECT = "https://api.minimax.io"
 _TIMEOUT_S = 600
 
 
@@ -202,7 +202,7 @@ class MinimaxMusicAdapter:
             payload["lyrics"] = lyrics[:3500]
         if title:
             payload["title"] = title[:120]
-        body = self._post("/lyrics_generation", payload)
+        body = self._post("/v1/lyrics_generation", payload)
         return {
             "song_title": body.get("song_title") or title or "",
             "style_tags": body.get("style_tags") or "",
@@ -220,7 +220,7 @@ class MinimaxMusicAdapter:
             payload["audio_base64"] = audio_base64
         else:
             payload["audio_url"] = audio_url
-        body = self._post("/music_cover_preprocess", payload)
+        body = self._post("/v1/music_cover_preprocess", payload)
         structure_raw = body.get("structure_result") or "{}"
         try:
             structure = json.loads(structure_raw)
@@ -313,7 +313,7 @@ class MinimaxMusicAdapter:
                 raise RuntimeError("cancelled")
             payload = self._payload(model_id, style_prompt, lyrics, mode, reference_url,
                                     cover_feature_id=cover_feature_id)
-            body = self._post("/music_generation", payload)
+            body = self._post("/v1/music_generation", payload)
             return _save_song(body, Path(out_dir or _music_dir()), style_prompt)
 
         return generate
