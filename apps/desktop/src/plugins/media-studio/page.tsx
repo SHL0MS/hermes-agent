@@ -38,6 +38,7 @@ import {
   deleteJob,
   fetchJobs,
   fetchProviders,
+  filesPresent,
   invalidateJobs,
   isTerminal,
   jobReference,
@@ -64,8 +65,17 @@ import {
   THUMB_MAX,
   THUMB_MIN
 } from './attach'
+import {
+  type AudioSelection,
+  toggleInSelection as audioSelectionToggle,
+  clearSelection as clearAudioSelection,
+  EMPTY_SELECTION
+} from './audio-select'
+import { AudioPanel } from './AudioPanel'
 import { useStudio } from './i18n'
 import { clampCount, jobParamEntries, jobPrompt, musicBriefParams } from './job-params'
+import { MiniAudioPlayer } from './MiniAudioPlayer'
+import { MixBar } from './MixBar'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
 import { type CoverDraft, CoverPanel, LyricsEditorTools } from './MusicActions'
 
@@ -74,6 +84,15 @@ import { type CoverDraft, CoverPanel, LyricsEditorTools } from './MusicActions'
 // ---------------------------------------------------------------------------
 
 const ASPECT_DEFAULTS = ['1:1', '16:9', '9:16', '4:3', '3:4']
+
+/** Providers the engine can re-run directly — retry/more-like-this eligibility.
+ *  Agent rows (provider='agent') and local DSP derivations (provider='craft')
+ *  aren't resubmittable jobs. */
+const RESUBMITTABLE_PROVIDERS = ['fal', 'krea', 'minimax'] as const
+
+function canResubmit(job: MediaJob): boolean {
+  return (RESUBMITTABLE_PROVIDERS as readonly string[]).includes(job.provider)
+}
 
 function stateTone(state: MediaJob['state']): string {
   if (state === 'done') {
@@ -85,6 +104,16 @@ function stateTone(state: MediaJob['state']): string {
   }
 
   return 'text-(--ui-accent)'
+}
+
+function fmtDuration(s: unknown): string | null {
+  const n = Number(s)
+
+  if (!Number.isFinite(n) || n <= 0) {return null}
+  const m = Math.floor(n / 60)
+  const sec = Math.round(n - m * 60)
+
+  return `${m}:${String(sec).padStart(2, '0')}`
 }
 
 /** Async media <img> fed by the bridge data-URL cache. */
@@ -604,9 +633,10 @@ const CreatePanel: FC<{
            prompt textarea above doubles as the free-form description; these
            fields become the craft loop's structured brief. */}
       {model?.modality === 'audio' && (
-        <div className="flex flex-col gap-3 rounded-md bg-(--ui-bg-tertiary) p-3">
-          <div className="grid grid-cols-[minmax(0,2fr)_5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2">
-            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+        <div className="flex flex-col gap-2.5 rounded-md bg-(--ui-bg-tertiary) p-3">
+          {/* brief row 1: genre + bpm + key + mood on one line, 4-col grid */}
+          <div className="grid grid-cols-4 items-end gap-1.5">
+            <label className="col-span-2 flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
               {k.musicGenre}
               <Input className="h-8" onChange={event => patch({ genre: event.target.value })} placeholder="dark synthpop" value={state.genre} />
             </label>
@@ -618,41 +648,62 @@ const CreatePanel: FC<{
               {k.musicKeySig}
               <Input className="h-8" onChange={event => patch({ musicKey: event.target.value })} placeholder="C minor" value={state.musicKey} />
             </label>
+          </div>
+          {/* brief row 2: mood + instruments + takes + instrumental switch */}
+          <div className="grid grid-cols-4 items-end gap-1.5">
             <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
               {k.musicMood}
               <Input className="h-8" onChange={event => patch({ mood: event.target.value })} placeholder="bittersweet" value={state.mood} />
             </label>
-          </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2">
-            <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+            <label className="col-span-2 flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
               {k.musicInstruments}
-              <Input className="h-8" onChange={event => patch({ instrumentation: event.target.value })} placeholder="analog pads, 808 kick" value={state.instrumentation} />
+              <Input className="h-8" onChange={event => patch({ instrumentation: event.target.value })} placeholder="analog pads, 808" value={state.instrumentation} />
             </label>
             <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
               {k.musicTakes}
               <Input className="h-8" inputMode="numeric" onChange={event => patch({ iterations: event.target.value.replace(/[^1-4]/g, '') })} value={state.iterations} />
             </label>
           </div>
-          <label className="flex items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-            <Switch checked={state.instrumental} onCheckedChange={checked => patch({ instrumental: checked })} />
-            {k.musicInstrumental}
-          </label>
-          {!state.instrumental && (
-            <>
-              <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+          {/* row 3: vocal + instrumental on one line; switch sits at the end */}
+          <div className="flex items-end gap-2">
+            {!state.instrumental && (
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
                 {k.musicVocal}
                 <Input className="h-8" onChange={event => patch({ vocal: event.target.value })} placeholder="breathy female alto" value={state.vocal} />
               </label>
+            )}
+            <label className="ml-auto flex h-8 items-center gap-2 pb-0.5 text-[0.6875rem] text-(--ui-text-tertiary)">
+              <Switch checked={state.instrumental} onCheckedChange={checked => patch({ instrumental: checked })} />
+              {k.musicInstrumental}
+            </label>
+          </div>
+          {/* row 4: lyrics side-by-side with edit panel; hides in instrumental */}
+          {!state.instrumental && (
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] items-start gap-1.5">
               <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
                 {k.musicLyrics}
-                <Textarea className="min-h-16 font-mono text-[0.6875rem]" onChange={event => patch({ lyrics: event.target.value })} placeholder="[Verse]&#10;...&#10;[Chorus]&#10;..." value={state.lyrics} />
+                <Textarea
+                  className="min-h-20 font-mono text-[0.6875rem]"
+                  onChange={event => patch({ lyrics: event.target.value })}
+                  placeholder="[Verse]&#10;...&#10;[Chorus]&#10;..."
+                  value={state.lyrics}
+                />
               </label>
-              <LyricsEditorTools
-                lyrics={state.lyrics}
-                onApplyLyrics={text => patch({ lyrics: text })}
-                onApplyTitle={() => undefined}
-              />
-            </>
+              <div className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+                <span>{k.musicLyricsEdit}</span>
+                <div className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2">
+                  <LyricsEditorTools
+                    compact
+                    lyrics={state.lyrics}
+                    onApplyLyrics={text => patch({ lyrics: text })}
+                    onApplyTitle={() => undefined}
+                  />
+                </div>
+                <p className="text-[0.625rem] leading-snug text-(--ui-text-quaternary)">
+                  LLM edit (~$0.01): "darker chorus", "shorter verse 2"
+                </p>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -759,7 +810,7 @@ const QueueRow: FC<{ job: MediaJob; label: string; onCancel: (id: string) => voi
     <div className="flex items-center gap-3 rounded-md border border-(--ui-stroke-secondary) px-3 py-2">
       <GlyphSpinner className="text-[0.875rem]" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[0.75rem]">{String(job.params.prompt ?? '')}</p>
+        <p className="truncate text-[0.75rem]">{jobPrompt(job) || job.model.split('/').pop()}</p>
         <p className="text-[0.6875rem] text-(--ui-text-quaternary)">
           {job.provider} · {job.model.split('/').pop()}
           {job.progress ? ` · ${job.progress}` : ''}
@@ -803,6 +854,13 @@ const Lightbox: FC<{
     aspectRatio: k.aspectRatio,
     audio: k.audio,
     duration: k.duration,
+    musicBpm: k.musicBpm,
+    musicGenre: k.musicGenre,
+    musicInstruments: k.musicInstruments,
+    musicKeySig: k.musicKeySig,
+    musicMood: k.musicMood,
+    musicTakes: k.musicTakes,
+    musicVocal: k.musicVocal,
     negativePrompt: k.negativePrompt,
     resolution: k.resolution,
     seed: k.seed,
@@ -911,7 +969,7 @@ const Lightbox: FC<{
           <video autoPlay className="min-h-0 max-w-full flex-1 rounded-lg" controls key={job.id} src={mediaVideoUrl(path)} />
         ) : isAudio ? (
           <div className="flex min-h-0 w-full max-w-2xl flex-1 flex-col items-center justify-center gap-4">
-            <audio autoPlay className="w-full" controls key={job.id} src={mediaVideoUrl(path)} />
+            <MiniAudioPlayer src={mediaVideoUrl(path)} title={prompt || job.model.split('/').pop()} />
           </div>
         ) : src ? (
           <img alt={prompt} className="min-h-0 max-w-full flex-1 rounded-lg object-contain" key={job.id} src={src} />
@@ -976,9 +1034,13 @@ const LibraryCard: FC<{
   onRemove: (id: string) => void
   onRetry: (job: MediaJob) => void
   onCoverThis?: (job: MediaJob) => void
-}> = ({ job, onCoverThis, onOpen, onRemove, onRetry, onSendToChat, onUseAsInput }) => {
+  onEditAudio?: (job: MediaJob) => void
+  mixSelected?: boolean
+  onToggleMixSelect?: (job: MediaJob) => void
+}> = ({ job, mixSelected, onCoverThis, onEditAudio, onOpen, onRemove, onRetry, onSendToChat, onToggleMixSelect, onUseAsInput }) => {
   const k = useStudio()
   const failed = job.state === 'failed' || job.state === 'expired'
+  const missing = !failed && !filesPresent(job)
   const thumb = job.thumb_paths[0] ?? job.result_paths[0]
   const prompt = jobPrompt(job)
 
@@ -994,11 +1056,11 @@ const LibraryCard: FC<{
   return (
     <div
       className="group relative overflow-hidden rounded-lg border border-(--ui-stroke-secondary)"
-      draggable={!failed && Boolean(job.result_paths[0])}
+      draggable={!failed && !missing && Boolean(job.result_paths[0])}
       onDragStart={event => {
         const path = job.result_paths[0]
 
-        if (!path) {
+        if (!path || missing) {
           return
         }
 
@@ -1012,10 +1074,22 @@ const LibraryCard: FC<{
       {failed ? (
         <div className="flex aspect-square flex-col items-center justify-center gap-2 p-3 text-center">
           <Codicon className="text-(--ui-text-quaternary)" name="warning" size="1.25rem" />
-          <p className="line-clamp-3 text-[0.6875rem] text-(--ui-text-tertiary)">{job.error}</p>
-          <Button onClick={() => onRetry(job)} size="sm" variant="outline">
-            {k.retry}
-          </Button>
+          <p className="line-clamp-3 text-[0.6875rem] text-(--ui-text-tertiary)" title={job.error ?? undefined}>{job.error}</p>
+          {canResubmit(job) && (
+            <Button onClick={() => onRetry(job)} size="sm" variant="outline">
+              {k.retry}
+            </Button>
+          )}
+        </div>
+      ) : missing ? (
+        <div className="flex aspect-square flex-col items-center justify-center gap-2 p-3 text-center">
+          <Codicon className="text-(--ui-text-quaternary)" name="file-media" size="1.25rem" />
+          <p className="text-[0.6875rem] text-(--ui-text-tertiary)">{k.fileMissing}</p>
+          {canResubmit(job) && jobPrompt(job) && (
+            <Button onClick={() => onRetry(job)} size="sm" variant="outline">
+              {k.regenerate}
+            </Button>
+          )}
         </div>
       ) : (
         <button className="block w-full cursor-zoom-in" onClick={() => onOpen(job)} type="button">
@@ -1029,9 +1103,14 @@ const LibraryCard: FC<{
         </button>
       )}
 
-      {job.modality === 'video' && !failed && (
+      {job.modality === 'video' && !failed && !missing && (
         <span className="pointer-events-none absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[0.625rem] text-white">
           <Codicon name="play" size="0.625rem" />
+        </span>
+      )}
+      {job.modality === 'audio' && !failed && !missing && (
+        <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[0.625rem] text-white">
+          {fmtDuration(job.params.duration_s) ?? 'audio'}
         </span>
       )}
       {job.source === 'agent' && (
@@ -1040,14 +1119,34 @@ const LibraryCard: FC<{
         </span>
       )}
 
-      {prompt && !failed && (
+      {prompt && !failed && !missing && (
         <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-2 pb-6 opacity-0 transition-opacity group-hover:opacity-100">
           <p className="line-clamp-2 text-[0.6875rem] leading-snug text-white/90">{prompt}</p>
         </div>
       )}
 
+      {job.modality === 'audio' && !failed && !missing && onToggleMixSelect && (
+        <button
+          aria-checked={mixSelected}
+          aria-label={mixSelected ? 'Remove from mix' : 'Add to mix'}
+          className={`absolute left-2 top-2 flex size-5 items-center justify-center rounded border text-[0.625rem] transition-colors ${
+            mixSelected
+              ? 'border-violet-400 bg-violet-500 text-white'
+              : 'border-white/40 bg-black/50 text-white/80 hover:border-white/70'
+          }`}
+          onClick={e => {
+            e.stopPropagation()
+            onToggleMixSelect(job)
+          }}
+          role="checkbox"
+          type="button"
+        >
+          {mixSelected ? '✓' : ''}
+        </button>
+      )}
+
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-0.5 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-        {!failed && job.result_paths[0] && (
+        {!failed && !missing && job.result_paths[0] && (
           <>
             {onSendToChat && (
               <Tip label={k.sendToChat}>
@@ -1064,7 +1163,7 @@ const LibraryCard: FC<{
               </Tip>
             )}
             {job.modality === 'audio' && !failed && onCoverThis && (
-              <Tip label="Cover this track">
+              <Tip label={k.audioCoverThis}>
                 <Button
                   className="text-white"
                   onClick={event => {
@@ -1075,6 +1174,21 @@ const LibraryCard: FC<{
                   variant="ghost"
                 >
                   <Codicon name="refresh" />
+                </Button>
+              </Tip>
+            )}
+            {job.modality === 'audio' && !failed && onEditAudio && (
+              <Tip label={k.audioEditMaster}>
+                <Button
+                  className="text-white"
+                  onClick={event => {
+                    event.stopPropagation()
+                    onEditAudio(job)
+                  }}
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  <Codicon name="tools" />
                 </Button>
               </Tip>
             )}
@@ -1114,9 +1228,18 @@ export const MediaStudioPage: FC = () => {
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
   const [coverDraft, setCoverDraft] = useState<CoverDraft | null>(null)
+  const [audioPanelJob, setAudioPanelJob] = useState<MediaJob | null>(null)
+  const [mixSelection, setMixSelection] = useState<AudioSelection>(EMPTY_SELECTION)
   // Thumbnail edge length (px) for the library grid — persisted.
   const [thumbSize, setThumbSizeState] = useState(loadThumbSize)
   const providersRef = useRef<ProviderInfo[]>([])
+  // The page owns its own scroller (overflow-y-auto below) — window.scrollTo
+  // is a no-op here, so flows that reveal the create panel scroll this ref.
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ behavior: 'smooth', top: 0 })
+  }, [])
 
   const setThumbSize = useCallback((value: number) => {
     setThumbSizeState(value)
@@ -1166,7 +1289,7 @@ export const MediaStudioPage: FC = () => {
   // open viewer tracks reality: the current row's fresh state renders (falling
   // back to the opening snapshot if the row vanished), and the arrows hide at
   // the ends.
-  const viewable = filtered.filter(job => job.result_paths.length > 0)
+  const viewable = filtered.filter(job => job.result_paths.length > 0 && filesPresent(job))
   const lightboxIndex = lightbox ? viewable.findIndex(job => job.id === lightbox.id) : -1
   const lightboxJob = lightboxIndex >= 0 ? viewable[lightboxIndex] : null
   const lightboxPrev = lightboxIndex > 0 ? viewable[lightboxIndex - 1] : null
@@ -1227,12 +1350,12 @@ export const MediaStudioPage: FC = () => {
 
     if (path) {
       setStartImage(path)
-      window.scrollTo({ behavior: 'smooth', top: 0 })
+      scrollToTop()
     }
-  }, [])
+  }, [scrollToTop])
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 overflow-y-auto p-4">
+    <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 overflow-y-auto p-4" ref={scrollRef}>
       <header className="flex items-center justify-between">
         <h1 className="text-[0.9375rem] font-medium">{k.title}</h1>
         <SegmentedControl
@@ -1263,6 +1386,12 @@ export const MediaStudioPage: FC = () => {
           onClose={() => setCoverDraft(null)}
         />
       )}
+      {audioPanelJob && (
+        <AudioPanel
+          job={audioPanelJob}
+          onClose={() => setAudioPanelJob(null)}
+        />
+      )}
 
       {active.length > 0 && (
         <section className="flex flex-col gap-2">
@@ -1281,6 +1410,13 @@ export const MediaStudioPage: FC = () => {
       )}
 
       <section className="flex min-h-0 flex-1 flex-col gap-2">
+        {mixSelection.ids.size > 0 && (
+          <MixBar
+            jobs={filtered}
+            onClear={() => setMixSelection(clearAudioSelection(EMPTY_SELECTION))}
+            selection={mixSelection}
+          />
+        )}
         <div className="flex items-center justify-between">
           <h2 className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">{k.library}</h2>
           {/* Finder-style thumbnail size slider (persisted). */}
@@ -1311,17 +1447,27 @@ export const MediaStudioPage: FC = () => {
               <LibraryCard
                 job={job}
                 key={job.id}
+                mixSelected={mixSelection.ids.has(job.id)}
                 onCoverThis={job1 => {
+                  setAudioPanelJob(null)
                   setCoverDraft({
                     reference: jobReference(job1.id),
                     sourceTitle: String(job1.params.prompt ?? 'track').slice(0, 60)
                   })
-                  window.scrollTo({ behavior: 'smooth', top: 0 })
+                  scrollToTop()
+                }}
+                onEditAudio={job1 => {
+                  setCoverDraft(null)
+                  setAudioPanelJob(job1)
+                  scrollToTop()
                 }}
                 onOpen={setLightbox}
                 onRemove={onRemove}
                 onRetry={onRetry}
                 onSendToChat={onSendToChat}
+                onToggleMixSelect={job1 =>
+                  setMixSelection(sel => audioSelectionToggle(sel, job1.id))
+                }
                 onUseAsInput={onUseAsInput}
               />
             ))}
@@ -1336,8 +1482,8 @@ export const MediaStudioPage: FC = () => {
           onMoreLikeThis={
             // Needs a resubmittable row: a studio provider + a prompt. Agent
             // rows carry provider='agent'/tool-name models the engine can't
-            // re-run directly.
-            ['fal', 'krea'].includes((lightboxJob ?? lightbox).provider) && jobPrompt(lightboxJob ?? lightbox)
+            // re-run directly; craft derivations have no generation params.
+            canResubmit(lightboxJob ?? lightbox) && jobPrompt(lightboxJob ?? lightbox)
               ? job => {
                   onMoreLikeThis(job)
                   setLightbox(null)

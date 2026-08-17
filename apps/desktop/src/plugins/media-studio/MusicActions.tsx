@@ -34,6 +34,7 @@ import {
   type StructureSegment,
   submitJob
 } from './api'
+import { useStudio } from './i18n'
 
 // ---------------------------------------------------------------------------
 // shared bits
@@ -72,6 +73,7 @@ export const CoverPanel: FC<{
   draft: CoverDraft
   onClose: () => void
 }> = ({ draft, onClose }) => {
+  const k = useStudio()
   const [prep, setPrep] = useState<CoverPreprocessResult | null>(null)
   const [lyrics, setLyrics] = useState('')
   const [stylePrompt, setStylePrompt] = useState('cinematic orchestral, heavier drums, brighter mix')
@@ -91,6 +93,27 @@ export const CoverPanel: FC<{
     analyze.mutate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.reference])
+
+  // Escape closes the panel (unless typing in one of its fields).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      const target = event.target as HTMLElement | null
+
+      if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) {
+        return
+      }
+
+      onClose()
+    }
+
+    window.addEventListener('keydown', onKey)
+
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const segments: StructureSegment[] = useMemo(
     () => (prep?.structure?.segments ?? []).filter(s => s.label !== 'silence'),
@@ -130,7 +153,7 @@ export const CoverPanel: FC<{
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-(--ui-stroke-secondary) p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-[0.8125rem] font-medium">Cover this track</h2>
+        <h2 className="text-[0.8125rem] font-medium">{k.audioCoverThis}</h2>
         <Button onClick={onClose} size="icon-sm" variant="ghost">
           <Codicon name="close" />
         </Button>
@@ -138,7 +161,7 @@ export const CoverPanel: FC<{
 
       {analyze.isPending && (
         <div className="flex items-center gap-2 text-[0.75rem] text-(--ui-text-tertiary)">
-          <GlyphSpinner className="text-[0.875rem]" /> Analyzing reference (free — ASR + structure)…
+          <GlyphSpinner className="text-[0.875rem]" /> {k.coverAnalyzing}
         </div>
       )}
 
@@ -147,7 +170,7 @@ export const CoverPanel: FC<{
           {/* Structure timeline */}
           <div className="flex flex-col gap-1">
             <span className="text-[0.6875rem] text-(--ui-text-quaternary)">
-              Structure · {prep.audio_duration ? fmtTime(prep.audio_duration) : '?'}
+              {k.audioStructureLine} · {prep.audio_duration ? fmtTime(prep.audio_duration) : '?'}
             </span>
             <div className="flex h-6 w-full overflow-hidden rounded">
               {segments.map((seg, i) => {
@@ -170,7 +193,7 @@ export const CoverPanel: FC<{
 
           {/* ASR lyrics → editable */}
           <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
-            Lyrics (extracted — edit before the cover renders)
+            {k.coverLyrics}
             <Textarea
               className="min-h-32 font-mono text-[0.6875rem] leading-relaxed"
               onChange={e => setLyrics(e.target.value)}
@@ -179,7 +202,7 @@ export const CoverPanel: FC<{
           </label>
 
           <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
-            Cover direction (style prompt for the new render)
+            {k.coverDirection}
             <Input
               className="h-8"
               onChange={e => setStylePrompt(e.target.value)}
@@ -189,7 +212,7 @@ export const CoverPanel: FC<{
 
           <div className="flex items-center justify-between">
             <span className="text-[0.625rem] text-(--ui-text-quaternary)">
-              feature id {prep.cover_feature_id.slice(0, 8)}… (24h) · lyrics ASR free · render bills one cover
+              feature id {prep.cover_feature_id.slice(0, 8)}… (24h) · {k.coverRenderCost}
             </span>
             <Button
               disabled={!lyrics.trim() || !stylePrompt.trim() || submit.isPending}
@@ -201,7 +224,7 @@ export const CoverPanel: FC<{
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
-                  <Codicon name="music" /> Render cover
+                  <Codicon name="music" /> {k.coverRender}
                 </span>
               )}
             </Button>
@@ -221,7 +244,10 @@ export const LyricsEditorTools: FC<{
   onApplyLyrics: (text: string) => void
   onApplyTitle?: (title: string) => void
   onApplyTags?: (tags: string) => void
-}> = ({ lyrics, onApplyLyrics, onApplyTags, onApplyTitle }) => {
+  /** compact variant for the create-panel slot (tighter rows). */
+  compact?: boolean
+}> = ({ compact: _compact, lyrics, onApplyLyrics, onApplyTags, onApplyTitle }) => {
+  const k = useStudio()
   const [direction, setDirection] = useState('')
 
   const edit = useMutation({
@@ -251,11 +277,11 @@ export const LyricsEditorTools: FC<{
             edit.mutate()
           }
         }}
-        placeholder="Edit direction — e.g. 'darker chorus', 'make verse 2 about rain'"
+        placeholder={k.lyricsEditPlaceholder}
         value={direction}
       />
       <Button disabled={disabled} onClick={() => edit.mutate()} size="sm" variant="outline">
-        {edit.isPending ? <GlyphSpinner className="text-[0.75rem]" /> : 'Edit lyrics'}
+        {edit.isPending ? <GlyphSpinner className="text-[0.75rem]" /> : k.musicLyricsEdit}
       </Button>
     </div>
   )

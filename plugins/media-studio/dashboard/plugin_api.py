@@ -254,6 +254,40 @@ class CoverPreprocessBody(BaseModel):
     reference: str
 
 
+class AudioEditBody(BaseModel):
+    """One audio edit against a job's result file. `op` picks the edit;
+    params are per-op (crop/fade carry seconds, speed a factor, others none)."""
+    job_id: str
+    op: str = Field(pattern="^(crop|fade|speed|reverse)$")
+    # crop
+    start_s: Optional[float] = None
+    end_s: Optional[float] = None
+    # fade
+    fade_in: Optional[float] = None
+    fade_out: Optional[float] = None
+    # speed
+    factor: Optional[float] = None
+
+
+class AudioLoopHookBody(BaseModel):
+    job_id: str
+    op: str = Field(pattern="^(loop|hook)$")
+    bars: Optional[int] = None
+    seconds: Optional[float] = None
+
+
+class AudioMasterBody(BaseModel):
+    job_id: str
+    preset: str = Field(default="spotify")
+    smart: bool = True
+
+
+class AudioMixBody(BaseModel):
+    job_ids: List[str] = Field(min_length=2)
+    bars_each: int = 8
+    target_bpm: Optional[float] = None
+
+
 # BYOK: which providers accept a pasted key, and which env var it lands in.
 # Server-side allow-list — the client never chooses the env var name. fal is
 # deliberately absent: subscribers ride the managed gateway; direct FAL_KEY
@@ -269,6 +303,165 @@ PROVIDER_KEY_VARS: Dict[str, str] = {
 # Routes
 # ---------------------------------------------------------------------------
 
+def _job_audio_file(job_id: str) -> Path:
+    """The result file for an audio job — the workspace for every DSP route."""
+    job = _store.get_job(job_id) if _store else None
+    if not job:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    if job["modality"] != "audio":
+        raise HTTPException(status_code=400, detail=f"job {job_id} is {job['modality']}, not audio")
+    if not job["result_paths"]:
+        raise HTTPException(status_code=404, detail=f"job {job_id} has no result file")
+    path = Path(job["result_paths"][0])
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="result file missing on disk")
+    return path
+
+
+def _register_derived(path: str, *, provider: str, model: str, source_job: Optional[Dict[str, Any]] = None) -> str:
+    """Import a DSP-derived audio file as a new library row (agent-sourced,
+    linked back to the job it came from)."""
+    p = Path(path)
+    if not p.is_file():
+        raise HTTPException(status_code=500, detail=f"derived file missing: {path}")
+    meta: Dict[str, Any] = {}
+    if source_job is not None:
+        meta["source_job"] = source_job["id"]
+        meta["prompt"] = source_job.get("params", {}).get("prompt")
+    thumb = _engine_mod.make_thumbnail(p, "audio")
+    return _store.import_file(
+        provider=provider, model=model, modality="audio",
+        result_path=str(p), thumb_path=thumb, source="agent",
+        created_at=p.stat().st_mtime,
+        params={k: v for k, v in meta.items() if v} or None,
+        session_id=str(source_job.get("session_id")) if source_job and source_job.get("session_id") else None,
+    )
+
+
+@router.get("/audio/structure")
+def audio_structure(job_id: str = Query(...)) -> Dict[str, Any]:
+    """Tempo, downbeat grid, and section boundaries for an audio job (free)."""
+    try:
+        from hermes_music_craft import structure
+    except ImportError:
+        raise HTTPException(status_code=500, detail="hermes-music-craft not installed")
+    path = _job_audio_file(job_id)
+    report = structure.sections_file(str(path))
+    if report.get("error"):
+        raise HTTPException(status_code=500, detail=report["error"])
+    return report
+
+
+@router.post("/audio/loop")
+def audio_loop(body: AudioLoopHookBody) -> Dict[str, Any]:
+    """Export a seamless N-bar loop from an audio job's file."""
+    try:
+        from hermes_music_craft import structure
+    except ImportError:
+        raise HTTPException(status_code=500, detail="hermes-music-craft not installed")
+    path = _job_audio_file(body.job_id)
+    out_dir = str(path.parent)
+    report = structure.loop_file(str(path), bars=max(1, body.bars or 8), out=out_dir)
+    if report.get("error"):
+        raise HTTPException(status_code=500, detail=report["error"])
+    job = _store.get_job(body.job_id)
+    new_id = _register_derived(report["out"], provider="craft", model="loop", source_job=job)
+    return {"job_id": new_id, "out": report["out"], "start_s": report["start_s"], "bars": report["bars"], "bpm": report.get("bpm")}
+
+
+@router.post("/audio/hook")
+def audio_hook(body: AudioLoopHookBody) -> Dict[str, Any]:
+    """Export the catchiest ~`seconds` window of an audio job's file."""
+    try:
+        from hermes_music_craft import structure
+    except ImportError:
+        raise HTTPException(status_code=500, detail="hermes-music-craft not installed")
+    path = _job_audio_file(body.job_id)
+    out_dir = str(path.parent)
+    report = structure.hook_file(str(path), seconds=float(body.seconds or 30.0), out=out_dir)
+    if report.get("error"):
+        raise HTTPException(status_code=500, detail=report["error"])
+    job = _store.get_job(body.job_id)
+    new_id = _register_derived(report["out"], provider="craft", model="hook", source_job=job)
+    return {"job_id": new_id, "out": report["out"], "start_s": report["start_s"], "seconds": report["seconds"]}
+
+
+@router.post("/audio/edit")
+def audio_edit(body: AudioEditBody) -> Dict[str, Any]:
+    """crop/fade/speed/reverse as a new file alongside the source."""
+    try:
+        from hermes_music_craft import edit as craft_edit
+    except ImportError:
+        raise HTTPException(status_code=500, detail="hermes-music-craft not installed")
+    path = _job_audio_file(body.job_id)
+    out_dir = str(path.parent)
+    op = body.op
+    if op == "crop":
+        if body.start_s is None or body.end_s is None:
+            raise HTTPException(status_code=400, detail="crop needs start_s and end_s")
+        report = craft_edit.crop(str(path), body.start_s, body.end_s, out_dir=out_dir)
+    elif op == "fade":
+        report = craft_edit.fade(str(path), fade_in=body.fade_in or 0.0, fade_out=body.fade_out or 0.0, out_dir=out_dir)
+    elif op == "speed":
+        if body.factor is None:
+            raise HTTPException(status_code=400, detail="speed needs a factor")
+        report = craft_edit.speed(str(path), body.factor, out_dir=out_dir)
+    else:
+        report = craft_edit.reverse(str(path), out_dir=out_dir)
+    if report.get("error"):
+        raise HTTPException(status_code=500, detail=report["error"])
+    job = _store.get_job(body.job_id)
+    new_id = _register_derived(report["out"], provider="craft", model=f"edit:{op}", source_job=job)
+    return {"job_id": new_id, "out": report["out"], "op": op}
+
+
+@router.post("/audio/master")
+def audio_master(body: AudioMasterBody) -> Dict[str, Any]:
+    """Loudness master (two-pass loudnorm at a platform preset; optional smart
+    diagnosis-driven corrective chain first). Returns a new mastered file."""
+    try:
+        from hermes_music_craft import mastering
+    except ImportError:
+        raise HTTPException(status_code=500, detail="hermes-music-craft not installed")
+    path = _job_audio_file(body.job_id)
+    out = path.parent / f"{path.stem}_mastered.wav"
+    report = mastering.smart_master_file(
+        str(path), str(out), preset=body.preset, smart=body.smart
+    )
+    if report.get("error"):
+        raise HTTPException(status_code=500, detail=report["error"])
+    job = _store.get_job(body.job_id)
+    new_id = _register_derived(str(out), provider="craft", model=f"master:{body.preset}", source_job=job)
+    return {
+        "job_id": new_id,
+        "out": str(out),
+        "preset": body.preset,
+        "measured_before": report.get("measured_before"),
+        "moves": report.get("moves") or [],
+    }
+
+
+@router.post("/audio/mix")
+def audio_mix(body: AudioMixBody) -> Dict[str, Any]:
+    """Beatmatch + crossfade ≥2 audio jobs into one continuous mix."""
+    try:
+        from hermes_music_craft import mix as craft_mix
+    except ImportError:
+        raise HTTPException(status_code=500, detail="hermes-music-craft not installed")
+    paths = [str(_job_audio_file(jid)) for jid in body.job_ids]
+    out_dir = str(_hermes_home() / "cache" / "music")
+    try:
+        report = craft_mix.make_mix(
+            paths,
+            target_bpm=body.target_bpm,
+            bars_each=max(1, body.bars_each),
+            out=out_dir,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc))
+    new_id = _register_derived(report["out"], provider="craft", model=f"mix:{len(paths)}", source_job=None)
+    report["job_id"] = new_id
+    return report
 def _minimax_adapter():
     """The live MiniMax adapter from the engine, or a 4xx JSON-able error."""
     engine = _ensure_engine()
@@ -449,6 +642,13 @@ def list_jobs(
     _index_agent_media_throttled()
     states = [s.strip() for s in state.split(",") if s.strip()] if state else None
     jobs = _store.list_jobs(states=states, modality=modality, provider=provider, limit=limit, offset=offset)
+    # Annotate rows whose files vanished from disk (cache cleaned, file moved)
+    # so the UI can stop offering dead actions (lightbox/attach/drag) instead
+    # of failing at click time with a bridge error. Cheap: one stat per path
+    # on rows that claim results.
+    for job in jobs:
+        paths = job.get("result_paths") or []
+        job["files_present"] = bool(paths) and all(Path(p).exists() for p in paths)
     return {"jobs": jobs, "cursor": _store.last_event_seq()}
 
 

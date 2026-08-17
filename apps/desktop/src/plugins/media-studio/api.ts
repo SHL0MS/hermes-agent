@@ -13,6 +13,9 @@ export interface ModelInfo {
   modality: 'image' | 'video' | 'audio'
   tier: string
   note?: string
+  /** Action-launched rows (e.g. the cover renderer) — valid submit targets,
+   *  hidden from the create panel's picker. */
+  hidden?: boolean
   supports: Record<string, boolean> & {
     /** MiniMax music brief fields; presence = the create panel shows them. */
     lyrics?: boolean
@@ -64,6 +67,9 @@ export interface MediaJob {
   source: string
   result_paths: string[]
   thumb_paths: string[]
+  /** Server-checked: every result file still exists on disk. Absent on older
+   *  backends → treat as present (no degraded affordances). */
+  files_present?: boolean
   created_at: number
   finished_at?: null | number
 }
@@ -99,6 +105,12 @@ export const PROVIDERS_KEY = ['media-studio', 'providers'] as const
 export const JOBS_KEY = ['media-studio', 'jobs'] as const
 
 export const TERMINAL_STATES: readonly JobState[] = ['done', 'failed', 'cancelled', 'expired']
+
+/** Whether a job's result files are actually on disk (server-checked; absent
+ *  field = older backend = assume present). */
+export function filesPresent(job: MediaJob): boolean {
+  return job.files_present !== false
+}
 
 export function isTerminal(state: JobState): boolean {
   return TERMINAL_STATES.includes(state)
@@ -168,12 +180,12 @@ export function fetchJob(id: string): Promise<{ job: MediaJob }> {
 
 /** Newest completed generation with a materialized file, newest first.
  *  Optionally constrained to one modality. */
-export async function latestResult(modality?: 'image' | 'video'): Promise<MediaJob | null> {
+export async function latestResult(modality?: 'image' | 'video' | 'audio'): Promise<MediaJob | null> {
   const { jobs } = await fetchJobs()
 
   return (
     jobs
-      .filter(job => job.state === 'done' && job.result_paths.length > 0)
+      .filter(job => job.state === 'done' && job.result_paths.length > 0 && job.files_present !== false)
       .filter(job => !modality || job.modality === modality)
       .sort((a, b) => b.created_at - a.created_at)[0] ?? null
   )
@@ -223,6 +235,58 @@ export function coverPreprocess(reference: string): Promise<CoverPreprocessResul
 /** Reference shorthand: a library job's result as a cover/derive source. */
 export function jobReference(jobId: string): string {
   return `job:${jobId}`
+}
+
+// ---------------------------------------------------------------------------
+// DSP audio routes (local, hermes-music-craft; no provider credits)
+// ---------------------------------------------------------------------------
+
+export interface AudioStructure {
+  bpm?: number
+  duration?: number
+  downbeats?: number[]
+  sections?: Array<{ index: number; start_s: number; end_s: number }>
+}
+
+export interface DerivedAudio {
+  job_id: string
+  out: string
+  start_s?: number
+  bars?: number
+  seconds?: number
+  bpm?: number
+  op?: string
+  preset?: string
+  measured_before?: { lufs?: number; true_peak_db?: number; lra?: number }
+  moves?: string[]
+}
+
+export function audioStructure(jobId: string): Promise<AudioStructure> {
+  return call(`/audio/structure?job_id=${encodeURIComponent(jobId)}`)
+}
+
+export function audioLoop(jobId: string, bars = 8): Promise<DerivedAudio> {
+  return call('/audio/loop', { body: { job_id: jobId, op: 'loop', bars }, method: 'POST' })
+}
+
+export function audioHook(jobId: string, seconds = 30): Promise<DerivedAudio> {
+  return call('/audio/hook', { body: { job_id: jobId, op: 'hook', seconds }, method: 'POST' })
+}
+
+export function audioEdit(
+  jobId: string,
+  op: 'crop' | 'fade' | 'speed' | 'reverse',
+  opts: { start_s?: number; end_s?: number; fade_in?: number; fade_out?: number; factor?: number } = {}
+): Promise<DerivedAudio> {
+  return call('/audio/edit', { body: { job_id: jobId, op, ...opts }, method: 'POST' })
+}
+
+export function audioMaster(jobId: string, preset = 'spotify', smart = true): Promise<DerivedAudio> {
+  return call('/audio/master', { body: { job_id: jobId, preset, smart }, method: 'POST' })
+}
+
+export function audioMix(jobIds: string[], barsEach = 8, targetBpm?: number): Promise<DerivedAudio & { total_s: number; segments: unknown[] }> {
+  return call('/audio/mix', { body: { job_ids: jobIds, bars_each: barsEach, target_bpm: targetBpm }, method: 'POST' })
 }
 
 export function cancelJob(id: string): Promise<{ ok: boolean }> {

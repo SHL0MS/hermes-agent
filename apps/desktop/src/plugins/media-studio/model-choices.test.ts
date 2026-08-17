@@ -45,6 +45,13 @@ describe('visibleModels', () => {
     expect(visibleModels(fal.models, 'image').map(m => m.id)).toEqual(['fal/image-a', 'fal/image-b'])
     expect(visibleModels(fal.models, 'video').map(m => m.id)).toEqual(['fal/video-a'])
   })
+
+  it('never offers hidden (action-launched) models, on any filter', () => {
+    const withHidden = [...fal.models, { ...model('fal/cover', 'audio'), hidden: true }]
+
+    expect(visibleModels(withHidden, 'all').map(m => m.id)).not.toContain('fal/cover')
+    expect(visibleModels(withHidden, 'audio')).toHaveLength(0)
+  })
 })
 
 describe('reconcileSelection', () => {

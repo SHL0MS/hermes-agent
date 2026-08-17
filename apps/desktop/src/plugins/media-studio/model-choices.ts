@@ -1,21 +1,26 @@
 /**
- * Model-choice math for the create panel. The header's All/Image/Video
+ * Model-choice math for the create panel. The header's All/Image/Video/Music
  * control is a page-wide mode, not just a library filter: on 'image' the
- * model dropdown offers only image models, on 'video' only video models.
- * Pure functions so the reconciliation is testable without mounting the page.
+ * model dropdown offers only image models, on 'video' only video models, on
+ * 'audio' only audio models. Pure functions so the reconciliation is testable
+ * without mounting the page.
  */
 
 import type { ModelInfo, ProviderInfo } from './api'
 
 export type ModalityFilter = 'all' | 'image' | 'video' | 'audio'
 
-/** Models a provider may offer under the active modality filter. */
+/** Models a provider may offer under the active modality filter. Rows the
+ *  catalog marks `hidden` (action-launched models like the cover renderer)
+ *  never appear in the picker — they're submitted by their own flows. */
 export function visibleModels(models: ModelInfo[], filter: ModalityFilter): ModelInfo[] {
+  const pickable = models.filter(model => !model.hidden)
+
   if (filter === 'all') {
-    return models
+    return pickable
   }
 
-  return models.filter(model => model.modality === filter)
+  return pickable.filter(model => model.modality === filter)
 }
 
 export interface ModelSelection {

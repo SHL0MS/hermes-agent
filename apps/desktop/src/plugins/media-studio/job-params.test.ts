@@ -66,6 +66,42 @@ describe('jobParamEntries', () => {
     expect(jobParamEntries(job({}))).toHaveLength(0)
     expect(jobPrompt(job({}))).toBe('')
   })
+
+  it('chips the music brief (genre/mood/bpm/key/vocal/instruments/takes) and mm:ss length', () => {
+    const entries = jobParamEntries(
+      job({
+        bpm: 118,
+        duration_s: 129.4,
+        genre: 'dark synthpop',
+        instrumentation: 'analog pads',
+        iterations: 2,
+        key: 'C minor',
+        lyrics: '[Verse]\nnever a chip',
+        mood: 'bittersweet',
+        prompt: 'a song',
+        vocal: 'alto'
+      })
+    )
+
+    const byKey = Object.fromEntries(entries.map(e => [e.key, e.value]))
+
+    expect(byKey.musicGenre).toBe('dark synthpop')
+    expect(byKey.musicBpm).toBe('118')
+    expect(byKey.musicKeySig).toBe('C minor')
+    expect(byKey.musicVocal).toBe('alto')
+    expect(byKey.musicTakes).toBe('2')
+    expect(byKey.duration).toBe('2:09')
+    // Lyrics are long text, never a chip.
+    expect(entries.some(e => e.value.includes('never a chip'))).toBe(false)
+  })
+
+  it('skips takes chip at 1 and duration chip when an explicit duration param exists', () => {
+    expect(jobParamEntries(job({ iterations: 1 })).some(e => e.key === 'musicTakes')).toBe(false)
+
+    const entries = jobParamEntries(job({ duration: 8, duration_s: 8.2 }))
+
+    expect(entries.filter(e => e.key === 'duration')).toHaveLength(1)
+  })
 })
 
 describe('clampCount', () => {

@@ -90,7 +90,57 @@ type StudioMessages = {
   musicTakes: string
   musicVocal: string
   musicLyrics: string
+  musicLyricsEdit: string
   musicInstrumental: string
+  // audio studio (AudioPanel/MixBar/CoverPanel)
+  audioEdit: string
+  audioAnalyze: string
+  audioTempo: string
+  audioLength: string
+  audioSectionsCount: string
+  audioExportLoop: string
+  audioExportHook: string
+  audioBars: string
+  audioSeconds: string
+  audioSmartMaster: string
+  audioMasterPreset: string
+  audioJob: string
+  audioFreeLocal: string
+  audioEditCrop: string
+  audioEditFade: string
+  audioEditSpeed: string
+  audioEditReverse: string
+  audioCoverThis: string
+  audioEditMaster: string
+  fileMissing: string
+  regenerate: string
+  audioStructureLine: string
+  audioLoopBars: string
+  audioHookSeconds: string
+  audioApply: string
+  audioStartS: string
+  audioEndS: string
+  audioFadeInS: string
+  audioFadeOutS: string
+  audioSpeedFactor: string
+  audioSaved: (name: string) => string
+  audioDone: string
+  audioEditSaved: string
+  audioCropInvalid: string
+  audioSpeedInvalid: string
+  audioPanelFootnote: string
+  mixBarForMix: (n: number) => string
+  mixBarMix: string
+  mixBarBars: string
+  mixBarClear: string
+  mixBarSubmitted: string
+  mixBarNeedTwo: string
+  coverAnalyzing: string
+  coverLyrics: string
+  coverDirection: string
+  coverRenderCost: string
+  coverRender: string
+  lyricsEditPlaceholder: string
 }
 
 const en: StudioMessages = {
@@ -176,7 +226,56 @@ const en: StudioMessages = {
   musicTakes: 'Takes',
   musicVocal: 'Vocal',
   musicLyrics: 'Lyrics (optional — auto-written if blank)',
-  musicInstrumental: 'Instrumental (no vocals)'
+  musicLyricsEdit: 'Edit lyrics (LLM)',
+  musicInstrumental: 'Instrumental (no vocals)',
+  audioEdit: 'Edit',
+  audioAnalyze: 'Analyze',
+  audioTempo: 'Tempo',
+  audioLength: 'Length',
+  audioSectionsCount: 'Sections',
+  audioExportLoop: 'Export loop',
+  audioExportHook: 'Export hook',
+  audioBars: 'bars',
+  audioSeconds: 'seconds',
+  audioSmartMaster: 'Smart master',
+  audioMasterPreset: 'Master preset',
+  audioJob: 'job',
+  audioFreeLocal: 'all local (free)',
+  audioEditCrop: 'Crop…',
+  audioEditFade: 'Fade…',
+  audioEditSpeed: 'Speed…',
+  audioEditReverse: 'Reverse',
+  audioCoverThis: 'Cover this track',
+  audioEditMaster: 'Edit & master',
+  fileMissing: 'File no longer on disk',
+  regenerate: 'Regenerate',
+  audioStructureLine: 'Structure',
+  audioLoopBars: 'Loop (bars)',
+  audioHookSeconds: 'Hook (seconds)',
+  audioApply: 'Apply',
+  audioStartS: 'Start (s)',
+  audioEndS: 'End (s)',
+  audioFadeInS: 'Fade in (s)',
+  audioFadeOutS: 'Fade out (s)',
+  audioSpeedFactor: 'Speed ×',
+  audioSaved: name => `Saved ${name}`,
+  audioDone: 'Done',
+  audioEditSaved: 'Edit saved to library',
+  audioCropInvalid: 'Crop needs an end after the start',
+  audioSpeedInvalid: 'Speed needs a positive factor',
+  audioPanelFootnote: 'Edits render alongside the source; each result becomes a new library row. Loop picks the seam-smoothest region on the measured downbeat grid; hook finds the most energetic window and snaps it to a downbeat.',
+  mixBarForMix: n => `${n} for mix`,
+  mixBarMix: 'Mix',
+  mixBarBars: 'bars',
+  mixBarClear: 'Clear',
+  mixBarSubmitted: 'Mix rendering in the queue',
+  mixBarNeedTwo: 'Select at least 2 tracks to mix',
+  coverAnalyzing: 'Analyzing reference (free — ASR + structure)…',
+  coverLyrics: 'Lyrics (extracted — edit before the cover renders)',
+  coverDirection: 'Cover direction (style prompt for the new render)',
+  coverRenderCost: 'ASR + structure free · one render bills one cover',
+  coverRender: 'Render cover',
+  lyricsEditPlaceholder: "Edit direction — e.g. 'darker chorus', 'make verse 2 about rain'"
 }
 
 const ja: StudioMessages = {
@@ -262,7 +361,56 @@ const ja: StudioMessages = {
   musicTakes: 'テイク数',
   musicVocal: 'ボーカル',
   musicLyrics: '歌詞（任意 — 空欄なら自動生成）',
-  musicInstrumental: 'インストゥルメンタル（ボーカルなし）'
+  musicLyricsEdit: '歌詞を編集 (LLM)',
+  musicInstrumental: 'インストゥルメンタル（ボーカルなし）',
+  audioEdit: '編集',
+  audioAnalyze: '解析',
+  audioTempo: 'テンポ',
+  audioLength: '長さ',
+  audioSectionsCount: 'セクション',
+  audioExportLoop: 'ループを書き出す',
+  audioExportHook: 'フックを書き出す',
+  audioBars: '小節',
+  audioSeconds: '秒',
+  audioSmartMaster: 'スマートマスター',
+  audioMasterPreset: 'マスタープリセット',
+  audioJob: 'ジョブ',
+  audioFreeLocal: 'すべてローカル（無料）',
+  audioEditCrop: 'クロップ…',
+  audioEditFade: 'フェード…',
+  audioEditSpeed: '速度…',
+  audioEditReverse: '反転',
+  audioCoverThis: 'このトラックをカバー',
+  audioEditMaster: '編集とマスタリング',
+  fileMissing: 'ファイルがディスクにありません',
+  regenerate: '再生成',
+  audioStructureLine: '構造',
+  audioLoopBars: 'ループ（小節）',
+  audioHookSeconds: 'フック（秒）',
+  audioApply: '適用',
+  audioStartS: '開始（秒）',
+  audioEndS: '終了（秒）',
+  audioFadeInS: 'フェードイン（秒）',
+  audioFadeOutS: 'フェードアウト（秒）',
+  audioSpeedFactor: '速度 ×',
+  audioSaved: name => `${name} を保存しました`,
+  audioDone: '完了',
+  audioEditSaved: '編集をライブラリに保存しました',
+  audioCropInvalid: 'クロップは開始より後の終了が必要です',
+  audioSpeedInvalid: '速度には正の倍率が必要です',
+  audioPanelFootnote: '編集はソースと並んで書き出され、それぞれが新しいライブラリ項目になります。ループは計測済みダウンビートグリッド上で最も継ぎ目の滑らかな領域を、フックは最もエネルギーの高い区間を選びます。',
+  mixBarForMix: n => `${n} 件をミックス`,
+  mixBarMix: 'ミックス',
+  mixBarBars: '小節',
+  mixBarClear: 'クリア',
+  mixBarSubmitted: 'ミックスをキューに入れました',
+  mixBarNeedTwo: 'ミックスには2曲以上選択してください',
+  coverAnalyzing: '参照を解析中（無料 — ASR + 構造）…',
+  coverLyrics: '歌詞（抽出済み — カバーをレンダリングする前に編集）',
+  coverDirection: 'カバーの方向性（新しいレンダリング用のスタイルプロンプト）',
+  coverRenderCost: 'ASR + 構造は無料 · レンダリング1回でカバー1枚課金',
+  coverRender: 'カバーをレンダリング',
+  lyricsEditPlaceholder: '編集の方向性 — 例：「サビをもっと暗く」「バース2を雨について」'
 }
 
 const zh: StudioMessages = {
@@ -348,7 +496,56 @@ const zh: StudioMessages = {
   musicTakes: '版本数',
   musicVocal: '人声',
   musicLyrics: '歌词（可选 — 留空自动生成）',
-  musicInstrumental: '纯音乐（无人声）'
+  musicLyricsEdit: '编辑歌词 (LLM)',
+  musicInstrumental: '纯音乐（无人声）',
+  audioEdit: '编辑',
+  audioAnalyze: '分析',
+  audioTempo: '速度 (BPM)',
+  audioLength: '时长',
+  audioSectionsCount: '段落',
+  audioExportLoop: '导出循环',
+  audioExportHook: '导出副歌',
+  audioBars: '小节',
+  audioSeconds: '秒',
+  audioSmartMaster: '智能母带',
+  audioMasterPreset: '母带预设',
+  audioJob: '任务',
+  audioFreeLocal: '全部本地（免费）',
+  audioEditCrop: '裁剪…',
+  audioEditFade: '淡入/淡出…',
+  audioEditSpeed: '变速…',
+  audioEditReverse: '反转',
+  audioCoverThis: '翻唱此曲',
+  audioEditMaster: '编辑与母带',
+  fileMissing: '文件已不在磁盘上',
+  regenerate: '重新生成',
+  audioStructureLine: '结构',
+  audioLoopBars: '循环（小节）',
+  audioHookSeconds: '副歌（秒）',
+  audioApply: '应用',
+  audioStartS: '开始（秒）',
+  audioEndS: '结束（秒）',
+  audioFadeInS: '淡入（秒）',
+  audioFadeOutS: '淡出（秒）',
+  audioSpeedFactor: '速度 ×',
+  audioSaved: name => `已保存 ${name}`,
+  audioDone: '完成',
+  audioEditSaved: '编辑已保存到媒体库',
+  audioCropInvalid: '裁剪的结束时间需晚于开始时间',
+  audioSpeedInvalid: '速度需要正数倍率',
+  audioPanelFootnote: '编辑结果与源文件并存，每个结果都会成为新的媒体库条目。循环会在测得的强拍网格上选取接缝最平滑的区域；副歌会找到能量最高的片段并对齐强拍。',
+  mixBarForMix: n => `已选 ${n} 首混音`,
+  mixBarMix: '混音',
+  mixBarBars: '小节',
+  mixBarClear: '清空',
+  mixBarSubmitted: '混音已加入队列',
+  mixBarNeedTwo: '混音至少需要选择 2 首曲目',
+  coverAnalyzing: '正在分析参考音轨（免费 — ASR + 结构）…',
+  coverLyrics: '歌词（已提取 — 渲染前先编辑）',
+  coverDirection: '翻唱方向（新一次渲染的风格提示词）',
+  coverRenderCost: 'ASR + 结构免费 · 渲染一次计一次翻唱费用',
+  coverRender: '渲染翻唱',
+  lyricsEditPlaceholder: '编辑方向 — 例如：“副歌更暗一些”“第2段写雨”'
 }
 
 const zhHant: StudioMessages = {
@@ -434,7 +631,56 @@ const zhHant: StudioMessages = {
   musicTakes: '版本數',
   musicVocal: '人聲',
   musicLyrics: '歌詞（可選 — 留空自動生成）',
-  musicInstrumental: '純音樂（無人聲）'
+  musicLyricsEdit: '編輯歌詞 (LLM)',
+  musicInstrumental: '純音樂（無人聲）',
+  audioEdit: '編輯',
+  audioAnalyze: '解析',
+  audioTempo: '速度 (BPM)',
+  audioLength: '時長',
+  audioSectionsCount: '段落',
+  audioExportLoop: '匯出循環',
+  audioExportHook: '匯出副歌',
+  audioBars: '小節',
+  audioSeconds: '秒',
+  audioSmartMaster: '智慧母帶',
+  audioMasterPreset: '母帶預設',
+  audioJob: '任務',
+  audioFreeLocal: '全部本地（免費）',
+  audioEditCrop: '裁剪…',
+  audioEditFade: '淡入/淡出…',
+  audioEditSpeed: '變速…',
+  audioEditReverse: '反轉',
+  audioCoverThis: '翻唱此曲',
+  audioEditMaster: '編輯與母帶',
+  fileMissing: '檔案已不在磁碟上',
+  regenerate: '重新生成',
+  audioStructureLine: '結構',
+  audioLoopBars: '循環（小節）',
+  audioHookSeconds: '副歌（秒）',
+  audioApply: '套用',
+  audioStartS: '開始（秒）',
+  audioEndS: '結束（秒）',
+  audioFadeInS: '淡入（秒）',
+  audioFadeOutS: '淡出（秒）',
+  audioSpeedFactor: '速度 ×',
+  audioSaved: name => `已儲存 ${name}`,
+  audioDone: '完成',
+  audioEditSaved: '編輯已儲存到媒體庫',
+  audioCropInvalid: '裁剪的結束時間需晚於開始時間',
+  audioSpeedInvalid: '速度需要正數倍率',
+  audioPanelFootnote: '編輯結果與來源檔案並存，每個結果都會成為新的媒體庫項目。循環會在測得的強拍網格上選取接縫最平滑的區域；副歌會找到能量最高的片段並對齊強拍。',
+  mixBarForMix: n => `已選 ${n} 首混音`,
+  mixBarMix: '混音',
+  mixBarBars: '小節',
+  mixBarClear: '清空',
+  mixBarSubmitted: '混音已加入佇列',
+  mixBarNeedTwo: '混音至少需要選擇 2 首曲目',
+  coverAnalyzing: '正在分析參考音軌（免費 — ASR + 結構）…',
+  coverLyrics: '歌詞（已擷取 — 渲染前先編輯）',
+  coverDirection: '翻唱方向（新一次渲染的風格提示詞）',
+  coverRenderCost: 'ASR + 結構免費 · 渲染一次計一次翻唱費用',
+  coverRender: '渲染翻唱',
+  lyricsEditPlaceholder: '編輯方向 — 例如：「副歌更暗一些」「第2段寫雨」'
 }
 
 export const STUDIO_LOCALES: PluginLocaleBundles = { en, ja, zh, 'zh-hant': zhHant }

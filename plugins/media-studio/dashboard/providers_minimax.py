@@ -131,6 +131,9 @@ class MinimaxMusicAdapter:
                 "display": "Music Cover",
                 "modality": "audio",
                 "tier": "quality",
+                # Launched from a library card's "Cover this track" flow (it
+                # needs a preprocessed reference) — hidden from the picker.
+                "hidden": True,
                 "supports": {"reference_audio_url": True},
                 "requires": {"reference_audio_url": True},
                 "note": "Restyle a reference track (URL/base64).",

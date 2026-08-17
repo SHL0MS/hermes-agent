@@ -10,6 +10,13 @@ export type ParamLabelKey =
   | 'aspectRatio'
   | 'audio'
   | 'duration'
+  | 'musicBpm'
+  | 'musicGenre'
+  | 'musicInstruments'
+  | 'musicKeySig'
+  | 'musicMood'
+  | 'musicTakes'
+  | 'musicVocal'
   | 'negativePrompt'
   | 'resolution'
   | 'seed'
@@ -79,6 +86,41 @@ export function jobParamEntries(job: MediaJob): ParamEntry[] {
 
   if (typeof image === 'string' && image) {
     out.push({ key: 'startImage', value: image.startsWith('data:') ? 'image' : basename(image) })
+  }
+
+  // Music brief chips — present on MiniMax music rows. Lyrics stay out of the
+  // chip row (long text renders as the prompt block already).
+  const music: Array<[ParamLabelKey, unknown]> = [
+    ['musicGenre', params.genre],
+    ['musicMood', params.mood],
+    ['musicBpm', params.bpm],
+    ['musicKeySig', params.key],
+    ['musicVocal', params.vocal],
+    ['musicInstruments', params.instrumentation]
+  ]
+
+  for (const [key, value] of music) {
+    if (typeof value === 'string' && value.trim()) {
+      out.push({ key, value: value.trim() })
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      out.push({ key, value: String(value) })
+    }
+  }
+
+  const takes = params.iterations
+
+  if (typeof takes === 'number' && takes > 1) {
+    out.push({ key: 'musicTakes', value: String(takes) })
+  }
+
+  // Rendered audio length (set at import/completion), mm:ss.
+  const durationS = Number(params.duration_s)
+
+  if (Number.isFinite(durationS) && durationS > 0 && params.duration === undefined) {
+    const m = Math.floor(durationS / 60)
+    const sec = Math.round(durationS - m * 60)
+
+    out.push({ key: 'duration', value: `${m}:${String(sec).padStart(2, '0')}` })
   }
 
   return out

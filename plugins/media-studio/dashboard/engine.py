@@ -103,6 +103,11 @@ class MediaStore:
         self._conn.executescript(_SCHEMA)
         self._migrate()
         self._conn.commit()
+        try:
+            _backfill_audio_durations(self._conn)
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — never block boot over backfill
+            pass
 
     def _migrate(self) -> None:
         """Additive column migrations for DBs created by older builds.
@@ -154,6 +159,18 @@ class MediaStore:
     ) -> str:
         """Register an already-materialized file (agent output) as a done job."""
         job_id = uuid.uuid4().hex[:16]
+        # Audio rows carry a measured duration in params.duration_s so the
+        # library card shows track length without a lazy measure per card.
+        try:
+            if modality == "audio":
+                merged = dict(params or {})
+                if "duration_s" not in merged:
+                    dur = _probe_audio_duration_s(result_path)
+                    if dur is not None:
+                        merged["duration_s"] = dur
+                params = merged
+        except Exception:  # noqa: BLE001 — never block a library row over a probe
+            pass
         with self._lock:
             self._conn.execute(
                 "INSERT INTO media_jobs (id, provider, model, modality, params, state, source,"
@@ -305,6 +322,59 @@ class MediaStore:
 # ---------------------------------------------------------------------------
 
 THUMB_EDGE = 480
+
+
+def _probe_audio_duration_s(path: str) -> Optional[float]:
+    """Duration of an audio file, seconds, via ffprobe; None when unavailable."""
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+            capture_output=True, text=True, timeout=20,
+        )
+        return float(proc.stdout.strip()) if proc.returncode == 0 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _backfill_audio_durations(conn) -> int:
+    """Fill params.duration_s for existing audio rows missing it. Bounded so a
+    big library doesn't stall boot; the indexer lands the same value for new
+    files on import. Returns rows updated."""
+    import sqlite3 as _sql
+
+    updated = 0
+    try:
+        rows = conn.execute(
+            "SELECT id, result_paths, params FROM media_jobs WHERE modality='audio' LIMIT 200"
+        ).fetchall()
+    except _sql.Error:
+        return 0
+    for row in rows:
+        try:
+            params = json.loads(row["params"] or "{}")
+        except (TypeError, ValueError):
+            params = {}
+        if params.get("duration_s"):
+            continue
+        try:
+            paths = json.loads(row["result_paths"] or "[]")
+        except (TypeError, ValueError):
+            paths = []
+        if not paths:
+            continue
+        target = str(paths[0])
+        if not target.startswith("/"):
+            target = str(_hermes_home() / "cache" / "music" / target)
+        dur = _probe_audio_duration_s(target)
+        if dur is None:
+            continue
+        params["duration_s"] = dur
+        conn.execute("UPDATE media_jobs SET params=? WHERE id=?", (json.dumps(params), row["id"]))
+        updated += 1
+    return updated
 
 
 def make_thumbnail(source: Path, modality: str) -> Optional[str]:
