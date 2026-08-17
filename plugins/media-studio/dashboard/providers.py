@@ -59,9 +59,69 @@ _DATA_URI_MIME = {
 _MAX_INPUT_IMAGE_BYTES = 12 * 1024 * 1024
 
 
+def _fit_image_for_wire(path, cap: int) -> tuple:
+    """Re-encode a COPY of an oversized input so it fits the data-URI cap.
+
+    The file on disk is never modified — this only shapes the bytes that ride
+    the request. Strategy: keep full resolution and try high-quality JPEG
+    first (a 2K/4K PNG is usually 3-6x larger than a q92 JPEG of the same
+    pixels); step the long edge down only when that still doesn't fit. Alpha
+    sources stay PNG so transparency survives. Returns (bytes, mime).
+    """
+    import io
+
+    from PIL import Image
+
+    with Image.open(path) as img:
+        img.load()
+        mode_alpha = img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        )
+        # Mode alone over-reports: clipboard/screenshot PNGs carry a fully
+        # opaque alpha channel. Only real transparency forces the PNG path.
+        has_alpha = False
+        if mode_alpha:
+            rgba = img.convert("RGBA")
+            extrema = rgba.getchannel("A").getextrema()
+            # getextrema() on a single band returns (min, max) ints.
+            alpha_min = extrema[0] if isinstance(extrema, tuple) else extrema
+            has_alpha = float(alpha_min) < 255  # type: ignore[arg-type]
+            base = rgba if has_alpha else rgba.convert("RGB")
+        else:
+            base = img.convert("RGB")
+
+    for long_edge in (None, 4096, 3072, 2048, 1536):
+        frame = base
+        if long_edge is not None and max(base.size) > long_edge:
+            scale = long_edge / max(base.size)
+            frame = base.resize(
+                (max(1, round(base.width * scale)), max(1, round(base.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        candidates = (
+            [("PNG", {"optimize": True})]
+            if has_alpha
+            else [("JPEG", {"quality": 92}), ("JPEG", {"quality": 85})]
+        )
+        for fmt, kwargs in candidates:
+            buf = io.BytesIO()
+            frame.save(buf, fmt, **kwargs)
+            if buf.tell() <= cap:
+                logger.info(
+                    "media-studio: input %s re-encoded for the wire (%s, %dpx long edge, %dKB)",
+                    path.name, fmt, max(frame.size), buf.tell() // 1024,
+                )
+                return buf.getvalue(), ("image/png" if fmt == "PNG" else "image/jpeg")
+
+    raise MediaProviderError(
+        f"Input image can't be fit under {cap // (1024 * 1024)}MB even at 1536px — use a smaller source"
+    )
+
+
 def normalize_image_input(value: Optional[str]) -> Optional[str]:
     """Accept http(s)/data URLs as-is; convert a LOCAL FILE PATH (the library
-    chaining case) to a base64 data URI both fal and Krea accept."""
+    chaining case) to a base64 data URI both fal and Krea accept. Oversized
+    files are transparently re-encoded for the wire (original untouched)."""
     if not value:
         return None
     value = str(value).strip()
@@ -78,7 +138,7 @@ def normalize_image_input(value: Optional[str]) -> Optional[str]:
         raise MediaProviderError(f"Unsupported input image type: {path.suffix}")
     data = path.read_bytes()
     if len(data) > _MAX_INPUT_IMAGE_BYTES:
-        raise MediaProviderError("Input image exceeds 12MB — downscale it first")
+        data, mime = _fit_image_for_wire(path, _MAX_INPUT_IMAGE_BYTES)
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 

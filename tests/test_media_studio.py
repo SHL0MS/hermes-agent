@@ -690,3 +690,53 @@ def test_provider_catalog_key_on_file_tracks_env(api_client, monkeypatch):
     monkeypatch.setenv("KREA_API_KEY", "k")
     providers = client.get("/providers").json()["providers"]
     assert providers[0]["key_on_file"] is True
+
+
+def test_oversized_input_image_reencodes_for_wire_without_touching_disk(tmp_path):
+    """A local input over the 12MB data-URI cap is re-encoded in memory (JPEG,
+    stepping resolution only if needed); the on-disk original is byte-identical
+    afterward and the data URI fits the cap."""
+    import base64
+
+    from PIL import Image
+
+    providers_mod = _load("providers")
+
+    # Random RGB noise defeats PNG compression → comfortably >12MB on disk.
+    import random
+
+    random.seed(7)
+    img = Image.frombytes(
+        "RGB", (2600, 2600), bytes(random.getrandbits(8) for _ in range(2600 * 2600 * 3))
+    )
+    src = tmp_path / "huge.png"
+    img.save(src, "PNG")
+    assert src.stat().st_size > providers_mod._MAX_INPUT_IMAGE_BYTES
+
+    before = src.read_bytes()
+    uri = providers_mod.normalize_image_input(str(src))
+
+    assert uri.startswith("data:image/jpeg;base64,")
+    payload = base64.b64decode(uri.split(",", 1)[1])
+    assert len(payload) <= providers_mod._MAX_INPUT_IMAGE_BYTES
+    # Same pixels, still a decodable image, original untouched.
+    assert src.read_bytes() == before
+    reloaded = Image.open(__import__("io").BytesIO(payload))
+    assert reloaded.size == (2600, 2600)
+
+
+def test_small_input_image_passes_through_unrecoded(tmp_path):
+    """Under-cap files keep their original bytes and mime — no re-encode."""
+    import base64
+
+    from PIL import Image
+
+    providers_mod = _load("providers")
+    img = Image.new("RGB", (64, 64), (200, 30, 90))
+    src = tmp_path / "small.png"
+    img.save(src, "PNG")
+
+    uri = providers_mod.normalize_image_input(str(src))
+
+    assert uri.startswith("data:image/png;base64,")
+    assert base64.b64decode(uri.split(",", 1)[1]) == src.read_bytes()
