@@ -144,6 +144,62 @@ export function clampCount(raw: string, max = 50): number {
   return Math.min(parsed, max)
 }
 
+/** Create-form fields recoverable from a finished job (reuse settings). */
+export interface ReuseState {
+  provider: string
+  modelId: string
+  prompt: string
+  negativePrompt: string
+  aspectRatio: string
+  resolution: string
+  duration: string
+  seed: string
+  audio: boolean
+  startImage: string
+  lyrics: string
+  genre: string
+  mood: string
+  bpm: string
+  musicKey: string
+  vocal: string
+  instrumentation: string
+  instrumental: boolean
+  iterations: string
+}
+
+const asStr = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
+
+/** Rebuild the create panel's state from a library row so one click restores
+ *  prompt, model, every parameter, and the reference image. Data-URI start
+ *  images (no file on disk to re-attach) and craft-internal fields are
+ *  dropped; everything else maps 1:1 onto CreateState. */
+export function reuseStateFromJob(job: MediaJob): ReuseState {
+  const p = job.params
+  const image = typeof p.image_url === 'string' && p.image_url.startsWith('/') ? p.image_url : ''
+
+  return {
+    provider: job.provider,
+    modelId: job.model,
+    prompt: jobPrompt(job),
+    negativePrompt: asStr(p.negative_prompt),
+    aspectRatio: asStr(p.aspect_ratio),
+    resolution: asStr(p.resolution),
+    duration: typeof p.duration === 'number' && Number.isFinite(p.duration) ? String(p.duration) : '',
+    seed: asStr(p.seed),
+    audio: p.audio !== false,
+    startImage: image,
+    lyrics: asStr(p.lyrics),
+    genre: asStr(p.genre),
+    mood: asStr(p.mood),
+    bpm: asStr(p.bpm),
+    musicKey: asStr(p.key),
+    vocal: asStr(p.vocal),
+    instrumentation: asStr(p.instrumentation),
+    instrumental: p.mode === 'instrumental',
+    iterations: typeof p.iterations === 'number' && Number.isFinite(p.iterations) ? String(p.iterations) : '2'
+  }
+}
+
 /** The music create-form fields that feed the craft loop's brief. */
 export interface MusicBrief {
   genre: string

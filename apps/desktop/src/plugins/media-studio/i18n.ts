@@ -38,6 +38,7 @@ type StudioMessages = {
   remove: string
   sendToChat: string
   useAsInput: string
+  reuseSettings: string
   revealFile: string
   copyPath: string
   copiedPath: string
@@ -174,6 +175,7 @@ const en: StudioMessages = {
   remove: 'Remove',
   sendToChat: 'Send to chat',
   useAsInput: 'Use as input',
+  reuseSettings: 'Reuse settings',
   revealFile: 'Reveal in Finder',
   copyPath: 'Copy path',
   copiedPath: 'Path copied',
@@ -309,6 +311,7 @@ const ja: StudioMessages = {
   remove: '削除',
   sendToChat: 'チャットに送る',
   useAsInput: '入力として使用',
+  reuseSettings: '設定を再利用',
   revealFile: 'Finderで表示',
   copyPath: 'パスをコピー',
   copiedPath: 'パスをコピーしました',
@@ -444,6 +447,7 @@ const zh: StudioMessages = {
   remove: '删除',
   sendToChat: '发送到聊天',
   useAsInput: '用作输入',
+  reuseSettings: '重用设置',
   revealFile: '在 Finder 中显示',
   copyPath: '复制路径',
   copiedPath: '已复制路径',
@@ -579,6 +583,7 @@ const zhHant: StudioMessages = {
   remove: '刪除',
   sendToChat: '傳送到聊天',
   useAsInput: '用作輸入',
+  reuseSettings: '重用設定',
   revealFile: '在 Finder 中顯示',
   copyPath: '複製路徑',
   copiedPath: '已複製路徑',

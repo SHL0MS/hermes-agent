@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MediaJob } from './api'
-import { clampCount, jobParamEntries, jobPrompt, musicBriefParams } from './job-params'
+import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, reuseStateFromJob } from './job-params'
 
 function job(params: Record<string, unknown>): MediaJob {
   return {
@@ -167,5 +167,71 @@ describe('musicBriefParams', () => {
     expect(params).toEqual({ instrumentation: 'analog pads, 808 kick', key: 'C minor', iterations: 2 })
     expect(musicBriefParams({ ...brief, iterations: '9' }).iterations).toBe(4)
     expect(musicBriefParams({ ...brief, iterations: '0' }).iterations).toBe(1)
+  })
+})
+
+describe('reuseStateFromJob', () => {
+  it('restores model, prompt, params, and a local reference image', () => {
+    const state = reuseStateFromJob(
+      job({
+        prompt: 'flying robots assembling a tower',
+        negative_prompt: 'blurry',
+        aspect_ratio: '16:9',
+        resolution: '1080p',
+        duration: 8,
+        seed: 42,
+        audio: false,
+        image_url: '/Users/x/pic.png'
+      })
+    )
+
+    expect(state).toMatchObject({
+      provider: 'fal',
+      modelId: 'fal-ai/flux-2/klein/9b',
+      prompt: 'flying robots assembling a tower',
+      negativePrompt: 'blurry',
+      aspectRatio: '16:9',
+      resolution: '1080p',
+      duration: '8',
+      seed: '42',
+      audio: false,
+      startImage: '/Users/x/pic.png'
+    })
+  })
+
+  it('drops data-URI reference images (no file to re-attach) and defaults cleanly', () => {
+    const state = reuseStateFromJob(job({ prompt: 'p', image_url: 'data:image/png;base64,xxx' }))
+
+    expect(state.startImage).toBe('')
+    expect(state.audio).toBe(true)
+    expect(state.seed).toBe('')
+    expect(state.instrumental).toBe(false)
+    expect(state.iterations).toBe('2')
+  })
+
+  it('recovers the music brief including instrumental mode', () => {
+    const state = reuseStateFromJob(
+      job({
+        genre: 'dark synthpop',
+        mood: 'brooding',
+        bpm: 118,
+        key: 'C minor',
+        instrumentation: 'analog pads',
+        mode: 'instrumental',
+        iterations: 3
+      })
+    )
+
+    expect(state).toMatchObject({
+      genre: 'dark synthpop',
+      mood: 'brooding',
+      bpm: '118',
+      musicKey: 'C minor',
+      instrumentation: 'analog pads',
+      instrumental: true,
+      iterations: '3',
+      lyrics: '',
+      vocal: ''
+    })
   })
 })

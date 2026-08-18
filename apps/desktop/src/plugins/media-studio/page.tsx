@@ -73,7 +73,7 @@ import {
 } from './audio-select'
 import { AudioPanel } from './AudioPanel'
 import { useStudio } from './i18n'
-import { clampCount, jobParamEntries, jobPrompt, musicBriefParams } from './job-params'
+import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, type ReuseState, reuseStateFromJob } from './job-params'
 import { MiniAudioPlayer } from './MiniAudioPlayer'
 import { MixBar } from './MixBar'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
@@ -259,10 +259,12 @@ const ProviderKeyStatus: FC<{ provider: ProviderInfo }> = ({ provider }) => {
 const CreatePanel: FC<{
   modalityFilter: ModalityFilter
   onProviderCatalog: (providers: ProviderInfo[]) => void
+  reuse: ReuseState | null
+  onReuseApplied: () => void
   startImage: string
   onClearStartImage: () => void
   onStartImage: (path: string) => void
-}> = ({ modalityFilter, onClearStartImage, onProviderCatalog, onStartImage, startImage }) => {
+}> = ({ modalityFilter, onClearStartImage, onProviderCatalog, onReuseApplied, onStartImage, reuse, startImage }) => {
   const k = useStudio()
   const { data } = useQuery({ queryFn: fetchProviders, queryKey: PROVIDERS_KEY, staleTime: 60_000 })
   const providers = useMemo(() => data?.providers ?? [], [data])
@@ -330,6 +332,24 @@ const CreatePanel: FC<{
   }, [modalityFilter, patch, providers, state.modelId, state.provider])
 
   const provider = providers.find(p => p.name === state.provider)
+
+  // A library card's "reuse settings" click lands here: restore the model,
+  // prompt, and every recoverable parameter in one shot. Runs after the
+  // reconciliation effect above so the restored pick isn't immediately moved
+  // (StudioPage flips the modality filter to match before setting reuse).
+  // The parent clears `reuse` via onReuseApplied right after we apply, so
+  // this effect fires exactly once per click — no ref mirror needed.
+  useEffect(() => {
+    if (!reuse) {
+      return
+    }
+
+    const { startImage: _startImage, ...fields } = reuse
+
+    patch(fields)
+    setCountChoice('1')
+    onReuseApplied()
+  }, [onReuseApplied, patch, reuse])
 
   const modelChoices = useMemo(
     () => visibleModels(provider?.models ?? [], modalityFilter),
@@ -836,7 +856,8 @@ const Lightbox: FC<{
   onPrev: (() => void) | null
   onNext: (() => void) | null
   onMoreLikeThis: ((job: MediaJob) => void) | null
-}> = ({ job, onClose, onMoreLikeThis, onNext, onPrev }) => {
+  onReuseSettings: ((job: MediaJob) => void) | null
+}> = ({ job, onClose, onMoreLikeThis, onNext, onPrev, onReuseSettings }) => {
   const k = useStudio()
   const [src, setSrc] = useState('')
   const [copied, setCopied] = useState(false)
@@ -993,6 +1014,18 @@ const Lightbox: FC<{
                   </Button>
                 </Tip>
               )}
+              {onReuseSettings && (
+                <Tip label={k.reuseSettings}>
+                  <Button
+                    className="shrink-0 text-white"
+                    onClick={() => onReuseSettings(job)}
+                    size="icon-sm"
+                    variant="ghost"
+                  >
+                    <Codicon name="history" />
+                  </Button>
+                </Tip>
+              )}
               <Tip label={copied ? k.copiedPrompt : k.copyPrompt}>
                 <Button className="shrink-0 text-white" onClick={copyPrompt} size="icon-sm" variant="ghost">
                   <Codicon name={copied ? 'check' : 'copy'} />
@@ -1033,16 +1066,24 @@ const LibraryCard: FC<{
   onUseAsInput: (job: MediaJob) => void
   onRemove: (id: string) => void
   onRetry: (job: MediaJob) => void
+  onReuseSettings?: (job: MediaJob) => void
   onCoverThis?: (job: MediaJob) => void
   onEditAudio?: (job: MediaJob) => void
   mixSelected?: boolean
   onToggleMixSelect?: (job: MediaJob) => void
-}> = ({ job, mixSelected, onCoverThis, onEditAudio, onOpen, onRemove, onRetry, onSendToChat, onToggleMixSelect, onUseAsInput }) => {
+}> = ({ job, mixSelected, onCoverThis, onEditAudio, onOpen, onRemove, onRetry, onReuseSettings, onSendToChat, onToggleMixSelect, onUseAsInput }) => {
   const k = useStudio()
   const failed = job.state === 'failed' || job.state === 'expired'
   const missing = !failed && !filesPresent(job)
   const thumb = job.thumb_paths[0] ?? job.result_paths[0]
   const prompt = jobPrompt(job)
+
+  // Reveal target: the result when it's on disk; otherwise the input image
+  // (failed rows — e.g. a rejected edit — keep their source inspectable).
+  const inputImagePath =
+    typeof job.params.image_url === 'string' && job.params.image_url.startsWith('/') ? job.params.image_url : ''
+
+  const revealTarget = (!missing && job.result_paths[0]) || inputImagePath
 
   const stateLabel: Record<MediaJob['state'], string> = {
     cancelled: k.stateCancelled,
@@ -1192,17 +1233,40 @@ const LibraryCard: FC<{
                 </Button>
               </Tip>
             )}
-            <Tip label={k.revealFile}>
-              <Button
-                className="text-white"
-                onClick={() => void window.hermesDesktop?.revealPath?.(job.result_paths[0])}
-                size="icon-sm"
-                variant="ghost"
-              >
-                <Codicon name="folder-opened" />
-              </Button>
-            </Tip>
           </>
+        )}
+        {/* Reuse settings: restore prompt + parameters + reference image into
+            the create panel. Available on every resubmittable row — healthy,
+            failed, and ghost alike (failed rows are where tweak-and-resubmit
+            matters most). */}
+        {onReuseSettings && canResubmit(job) && (
+          <Tip label={k.reuseSettings}>
+            <Button
+              className="text-white"
+              onClick={event => {
+                event.stopPropagation()
+                onReuseSettings(job)
+              }}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <Codicon name="history" />
+            </Button>
+          </Tip>
+        )}
+        {/* Reveal follows whatever is on disk: the result when present, else
+            the input image (failed rows keep their source inspectable). */}
+        {revealTarget && (
+          <Tip label={k.revealFile}>
+            <Button
+              className="text-white"
+              onClick={() => void window.hermesDesktop?.revealPath?.(revealTarget)}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <Codicon name="folder-opened" />
+            </Button>
+          </Tip>
         )}
         <Tip label={k.remove}>
           <Button className="text-white" onClick={() => onRemove(job.id)} size="icon-sm" variant="ghost">
@@ -1227,6 +1291,7 @@ export const MediaStudioPage: FC = () => {
   const [filter, setFilter] = useState<ModalityFilter>('all')
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
+  const [reuse, setReuse] = useState<ReuseState | null>(null)
   const [coverDraft, setCoverDraft] = useState<CoverDraft | null>(null)
   const [audioPanelJob, setAudioPanelJob] = useState<MediaJob | null>(null)
   const [mixSelection, setMixSelection] = useState<AudioSelection>(EMPTY_SELECTION)
@@ -1354,6 +1419,20 @@ export const MediaStudioPage: FC = () => {
     }
   }, [scrollToTop])
 
+  // "Reuse settings": restore the whole brief — model, prompt, parameters,
+  // and the reference image when its file still exists. The modality filter
+  // flips to the job's modality first so CreatePanel's reconciliation keeps
+  // the restored model instead of moving it.
+  const onReuseSettings = useCallback((job: MediaJob) => {
+    const snapshot = reuseStateFromJob(job)
+
+    setFilter(job.modality)
+    setStartImage(snapshot.startImage)
+    setReuse(snapshot)
+    setLightbox(null)
+    scrollToTop()
+  }, [scrollToTop])
+
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 overflow-y-auto p-4" ref={scrollRef}>
       <header className="flex items-center justify-between">
@@ -1376,7 +1455,9 @@ export const MediaStudioPage: FC = () => {
         onProviderCatalog={providers => {
           providersRef.current = providers
         }}
+        onReuseApplied={() => setReuse(null)}
         onStartImage={setStartImage}
+        reuse={reuse}
         startImage={startImage}
       />
 
@@ -1464,6 +1545,7 @@ export const MediaStudioPage: FC = () => {
                 onOpen={setLightbox}
                 onRemove={onRemove}
                 onRetry={onRetry}
+                onReuseSettings={onReuseSettings}
                 onSendToChat={onSendToChat}
                 onToggleMixSelect={job1 =>
                   setMixSelection(sel => audioSelectionToggle(sel, job1.id))
@@ -1492,6 +1574,7 @@ export const MediaStudioPage: FC = () => {
           }
           onNext={lightboxNext ? () => setLightbox(lightboxNext) : null}
           onPrev={lightboxPrev ? () => setLightbox(lightboxPrev) : null}
+          onReuseSettings={canResubmit(lightboxJob ?? lightbox) ? onReuseSettings : null}
         />
       )}
     </div>
