@@ -186,7 +186,7 @@ export interface ReuseState {
   duration: string
   seed: string
   audio: boolean
-  startImage: string
+  startImages: string[]
   lyrics: string
   genre: string
   mood: string
@@ -201,12 +201,14 @@ export interface ReuseState {
 const asStr = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
 
 /** Rebuild the create panel's state from a library row so one click restores
- *  prompt, model, every parameter, and the reference image. Data-URI start
- *  images (no file on disk to re-attach) and craft-internal fields are
- *  dropped; everything else maps 1:1 onto CreateState. */
+ *  prompt, model, every parameter, and the reference image(s). image_url may
+ *  be a string or an array (multi-reference edits). Data-URI entries (no file
+ *  on disk to re-attach) and craft-internal fields are dropped; everything
+ *  else maps 1:1 onto CreateState. */
 export function reuseStateFromJob(job: MediaJob): ReuseState {
   const p = job.params
-  const image = typeof p.image_url === 'string' && p.image_url.startsWith('/') ? p.image_url : ''
+  const rawImages = Array.isArray(p.image_url) ? p.image_url : [p.image_url]
+  const images = rawImages.filter((v): v is string => typeof v === 'string' && v.startsWith('/'))
 
   return {
     provider: job.provider,
@@ -218,7 +220,7 @@ export function reuseStateFromJob(job: MediaJob): ReuseState {
     duration: typeof p.duration === 'number' && Number.isFinite(p.duration) ? String(p.duration) : '',
     seed: asStr(p.seed),
     audio: p.audio !== false,
-    startImage: image,
+    startImages: images,
     lyrics: asStr(p.lyrics),
     genre: asStr(p.genre),
     mood: asStr(p.mood),

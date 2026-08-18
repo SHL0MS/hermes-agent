@@ -783,3 +783,35 @@ def test_favorite_column_migrates_persists_and_defaults_off(store, tmp_path):
         assert reopened.get_job(job_id)["favorite"] == 1
     finally:
         reopened.close()
+
+
+def test_multi_image_edit_routes_ordered_array(monkeypatch, tmp_path):
+    """NBP composes up to its max_images references: a list of local files
+    normalizes to an ordered image_urls array on the edit endpoint; over-cap
+    is rejected with the model's own limit; single-string input still works."""
+    from PIL import Image
+
+    providers_mod = _load("providers")
+    adapter = providers_mod.FalAdapter()
+    monkeypatch.setattr(adapter, "_direct_key", lambda: "k")
+    model = adapter._model("fal-ai/nano-banana-pro")
+
+    paths = []
+    for i in range(3):
+        p = tmp_path / f"ref{i}.png"
+        Image.new("RGB", (8, 8), (i * 40, 10, 10)).save(p, "PNG")
+        paths.append(str(p))
+
+    endpoint, payload = adapter._image_payload(model, {"prompt": "compose", "image_url": paths})
+    assert endpoint == "fal-ai/nano-banana-pro/edit"
+    assert len(payload["image_urls"]) == 3
+    assert all(u.startswith("data:image/png;base64,") for u in payload["image_urls"])
+
+    # Single string keeps working (back-compat wire shape).
+    _, single = adapter._image_payload(model, {"prompt": "x", "image_url": paths[0]})
+    assert len(single["image_urls"]) == 1
+
+    # Over the model's cap fails with the cap in the message.
+    too_many = paths * 3  # 9 > max_images=8
+    with pytest.raises(providers_mod.MediaProviderError, match="at most 8"):
+        adapter._image_payload(model, {"prompt": "x", "image_url": too_many})

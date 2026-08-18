@@ -142,6 +142,21 @@ def normalize_image_input(value: Optional[str]) -> Optional[str]:
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
+def _normalize_image_inputs(value: Any, model: Dict[str, Any]) -> List[str]:
+    """Normalize one-or-many reference images. The UI sends a list when the
+    model declares `max_images` > 1 (multi-reference edits — NBP composes up
+    to 8); a plain string stays the single-image path. Order is preserved
+    (reference order matters to composition models)."""
+    raw = value if isinstance(value, (list, tuple)) else [value]
+    urls = [u for u in (normalize_image_input(v) for v in raw if v) if u]
+    cap = int(model.get("max_images") or 1)
+    if len(urls) > cap:
+        raise MediaProviderError(
+            f"{model.get('display') or model.get('id')} accepts at most {cap} reference image(s); got {len(urls)}"
+        )
+    return urls
+
+
 # ---------------------------------------------------------------------------
 # FAL — through the Nous managed fal-queue gateway (no key needed for
 # subscribers) or direct FAL_KEY. Reuses the exact client plumbing the
@@ -167,6 +182,7 @@ FAL_IMAGE_MODELS: List[Dict[str, Any]] = [
         "payload_style": "aspect",
         "edit_endpoint": "fal-ai/nano-banana-pro/edit",
         "edit_requires_key": True,
+        "max_images": 8,
         "supports": {"aspect_ratio": True, "resolution": True, "seed": True, "image_url": True},
         "aspect_ratios": _NANO_ASPECTS,
         "resolutions": ["1K", "2K", "4K"],
@@ -182,6 +198,7 @@ FAL_IMAGE_MODELS: List[Dict[str, Any]] = [
         "tier": "quality",
         "payload_style": "aspect",
         "edit_endpoint": "fal-ai/nano-banana-2/edit",
+        "max_images": 4,
         "supports": {"aspect_ratio": True, "resolution": True, "seed": True, "image_url": True},
         "aspect_ratios": ["auto"] + _NANO_ASPECTS,
         "resolutions": ["0.5K", "1K", "2K", "4K"],
@@ -710,9 +727,10 @@ class FalAdapter:
         prompt = str(params.get("prompt") or "").strip()
         if not prompt and _prompt_required(model):
             raise MediaProviderError("Prompt is required")
-        image_url = (
-            normalize_image_input(params.get("image_url")) if supports.get("image_url") else None
+        image_urls = (
+            _normalize_image_inputs(params.get("image_url"), model) if supports.get("image_url") else []
         )
+        image_url = image_urls[0] if image_urls else None
         if _image_required(model) and not image_url:
             raise MediaProviderError(f"{model['display']} needs a start image — pick one from the library")
 
@@ -765,7 +783,8 @@ class FalAdapter:
             payload["seed"] = int(params["seed"])
 
         # A start image on an editing-capable model routes to the edit
-        # endpoint, which takes image_urls (array).
+        # endpoint, which takes image_urls (array — multi-reference edits
+        # compose several inputs; order preserved).
         if image_url and style != "clarity":
             edit = model.get("edit_endpoint")
             if edit:
@@ -779,7 +798,7 @@ class FalAdapter:
                         "or use Nano Banana Pro (Krea) with a Krea API key."
                     )
                 endpoint = edit
-                payload["image_urls"] = [image_url]
+                payload["image_urls"] = image_urls
                 # Edit endpoints reject text-to-image sizing params.
                 payload.pop("image_size", None)
 
@@ -1003,10 +1022,11 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "modality": "image",
         "tier": "quality",
         "path": "/generate/image/google/nano-banana-pro",
+        "max_images": 8,
         "supports": {"aspect_ratio": True, "resolution": True, "image_url": True},
         "aspect_ratios": ["21:9", "1:1", "4:3", "3:2", "2:3", "5:4", "4:5", "3:4", "16:9", "9:16"],
         "resolutions": ["1K", "2K", "4K"],
-        "note": "Needs a Krea API key (separate wallet). Takes an input image here — also on fal via portal credits (text-only).",
+        "note": "Needs a Krea API key (separate wallet). Takes input images here — also on fal via portal credits (text-only).",
     },
     {
         "id": "kling/kling-2.5",
@@ -1165,12 +1185,13 @@ class KreaAdapter:
                 # krea-2's schema requires resolution and only accepts 1K.
                 body["resolution"] = "1K"
             # Krea's image schemas take image prompts as image_urls[] (data
-            # URIs accepted) — NBP edit-style input rides this.
-            input_image = (
-                normalize_image_input(params.get("image_url")) if supports.get("image_url") else None
+            # URIs accepted) — NBP edit-style input rides this, including
+            # multi-reference composition when the model allows it.
+            input_images = (
+                _normalize_image_inputs(params.get("image_url"), model) if supports.get("image_url") else []
             )
-            if input_image:
-                body["image_urls"] = [input_image]
+            if input_images:
+                body["image_urls"] = input_images
         else:
             if supports.get("duration") and params.get("duration"):
                 body["duration"] = int(params["duration"])

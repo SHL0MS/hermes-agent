@@ -195,14 +195,22 @@ describe('reuseStateFromJob', () => {
       duration: '8',
       seed: '42',
       audio: false,
-      startImage: '/Users/x/pic.png'
+      startImages: ['/Users/x/pic.png']
     })
+  })
+
+  it('restores a multi-reference image list in order', () => {
+    const state = reuseStateFromJob(
+      job({ prompt: 'compose', image_url: ['/a/1.png', '/b/2.png', '/c/3.png'] })
+    )
+
+    expect(state.startImages).toEqual(['/a/1.png', '/b/2.png', '/c/3.png'])
   })
 
   it('drops data-URI reference images (no file to re-attach) and defaults cleanly', () => {
     const state = reuseStateFromJob(job({ prompt: 'p', image_url: 'data:image/png;base64,xxx' }))
 
-    expect(state.startImage).toBe('')
+    expect(state.startImages).toEqual([])
     expect(state.audio).toBe(true)
     expect(state.seed).toBe('')
     expect(state.instrumental).toBe(false)

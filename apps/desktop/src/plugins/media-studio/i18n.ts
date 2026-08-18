@@ -28,6 +28,8 @@ type StudioMessages = {
   audio: string
   startImage: string
   clearStartImage: string
+  moreImagesHint: (n: number) => string
+  attachFull: (n: number) => string
   generate: string
   generating: string
   image: string
@@ -171,6 +173,8 @@ const en: StudioMessages = {
   audio: 'Audio',
   startImage: 'Start image',
   clearStartImage: 'Clear start image',
+  moreImagesHint: n => `Drop or attach ${n} more reference image${n === 1 ? '' : 's'}`,
+  attachFull: n => `All ${n} reference slots used`,
   generate: 'Generate',
   generating: 'Generating…',
   image: 'Image',
@@ -312,6 +316,8 @@ const ja: StudioMessages = {
   audio: '音声',
   startImage: '開始画像',
   clearStartImage: '開始画像をクリア',
+  moreImagesHint: n => `参照画像をあと${n}枚追加できます`,
+  attachFull: n => `参照画像は最大${n}枚です`,
   generate: '生成',
   generating: '生成中…',
   image: '画像',
@@ -453,6 +459,8 @@ const zh: StudioMessages = {
   audio: '音频',
   startImage: '起始图像',
   clearStartImage: '清除起始图像',
+  moreImagesHint: n => `还可添加 ${n} 张参考图`,
+  attachFull: n => `参考图已达上限（${n} 张）`,
   generate: '生成',
   generating: '生成中…',
   image: '图像',
@@ -594,6 +602,8 @@ const zhHant: StudioMessages = {
   audio: '音訊',
   startImage: '起始影像',
   clearStartImage: '清除起始影像',
+  moreImagesHint: n => `還可新增 ${n} 張參考圖`,
+  attachFull: n => `參考圖已達上限（${n} 張）`,
   generate: '生成',
   generating: '生成中…',
   image: '影像',

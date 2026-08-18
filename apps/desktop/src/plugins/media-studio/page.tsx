@@ -295,10 +295,10 @@ const CreatePanel: FC<{
   onProviderCatalog: (providers: ProviderInfo[]) => void
   reuse: ReuseState | null
   onReuseApplied: () => void
-  startImage: string
-  onClearStartImage: () => void
-  onStartImage: (path: string) => void
-}> = ({ modalityFilter, onClearStartImage, onProviderCatalog, onReuseApplied, onStartImage, reuse, startImage }) => {
+  startImages: string[]
+  onRemoveStartImage: (index: number) => void
+  onAddStartImage: (path: string) => void
+}> = ({ modalityFilter, onAddStartImage, onProviderCatalog, onRemoveStartImage, onReuseApplied, reuse, startImages }) => {
   const k = useStudio()
   const { data } = useQuery({ queryFn: fetchProviders, queryKey: PROVIDERS_KEY, staleTime: 60_000 })
   const providers = useMemo(() => data?.providers ?? [], [data])
@@ -379,7 +379,7 @@ const CreatePanel: FC<{
       return
     }
 
-    const { startImage: _startImage, ...fields } = reuse
+    const { startImages: _startImages, ...fields } = reuse
 
     patch(fields)
     setCountChoice('1')
@@ -417,6 +417,9 @@ const CreatePanel: FC<{
   const aspectChoices = model?.aspect_ratios ?? ASPECT_DEFAULTS
   const modality = model?.modality ?? 'image'
   const acceptsImage = modelAcceptsImage(model)
+  // Reference-image slots for the active model (NBP composes up to 8).
+  const maxImages = acceptsImage ? Math.max(1, model?.max_images ?? 1) : 0
+  const slotsLeft = Math.max(0, maxImages - startImages.length)
 
   // A picked/dropped file lands here; rejections explain themselves.
   const takeStartImage = useCallback(
@@ -439,9 +442,9 @@ const CreatePanel: FC<{
         return
       }
 
-      onStartImage(path)
+      onAddStartImage(path)
     },
-    [k, model, onStartImage]
+    [k, model, onAddStartImage]
   )
 
   // Model switch: drop params the new model doesn't support.
@@ -477,8 +480,8 @@ const CreatePanel: FC<{
 
   const inputsSatisfied =
     providerHasFilterModels &&
-    (Boolean(state.prompt.trim()) || (!promptRequired && Boolean(startImage))) &&
-    (!imageRequired || Boolean(startImage))
+    (Boolean(state.prompt.trim()) || (!promptRequired && startImages.length > 0)) &&
+    (!imageRequired || startImages.length > 0)
 
   const canSubmit = Boolean(inputsSatisfied && provider?.available && model) && !submit.isPending
   const count = countChoice === COUNT_CUSTOM ? clampCount(customCount, MAX_COUNT) : Number(countChoice)
@@ -514,8 +517,10 @@ const CreatePanel: FC<{
       params.seed = Number(state.seed)
     }
 
-    if (supports.image_url && startImage) {
-      params.image_url = startImage
+    if (supports.image_url && startImages.length > 0) {
+      // Single-image models keep the plain-string wire shape (older
+      // backends); multi-image sends the ordered array.
+      params.image_url = startImages.length === 1 && maxImages <= 1 ? startImages[0] : startImages
     }
 
     if (model.modality === 'audio') {
@@ -623,17 +628,24 @@ const CreatePanel: FC<{
         type="file"
       />
 
-      {startImage && (
-        <div className="flex items-center gap-2 rounded-md bg-(--ui-bg-tertiary) px-2 py-1.5">
-          <Thumb alt={k.startImage} className="size-10 rounded object-cover" path={startImage} />
-          <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-(--ui-text-tertiary)">
-            {k.startImage}: {startImage.split('/').pop()}
-          </span>
-          <Tip label={k.clearStartImage}>
-            <Button onClick={onClearStartImage} size="icon-sm" variant="ghost">
-              <Codicon name="close" />
-            </Button>
-          </Tip>
+      {startImages.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-md bg-(--ui-bg-tertiary) px-2 py-1.5">
+          {startImages.map((img, index) => (
+            <div className="flex items-center gap-2" key={`${img}-${index}`}>
+              <Thumb alt={k.startImage} className="size-10 rounded object-cover" path={img} />
+              <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-(--ui-text-tertiary)">
+                {maxImages > 1 ? `${k.startImage} ${index + 1}/${maxImages}` : k.startImage}: {img.split('/').pop()}
+              </span>
+              <Tip label={k.clearStartImage}>
+                <Button onClick={() => onRemoveStartImage(index)} size="icon-sm" variant="ghost">
+                  <Codicon name="close" />
+                </Button>
+              </Tip>
+            </div>
+          ))}
+          {maxImages > 1 && slotsLeft > 0 && (
+            <span className="text-[0.625rem] text-(--ui-text-quaternary)">{k.moreImagesHint(slotsLeft)}</span>
+          )}
         </div>
       )}
 
@@ -669,12 +681,12 @@ const CreatePanel: FC<{
           value={state.prompt}
         />
         <div className="absolute bottom-1.5 right-1.5">
-          <Tip label={acceptsImage ? k.attachImage : k.attachUnsupported}>
+          <Tip label={!acceptsImage ? k.attachUnsupported : slotsLeft === 0 ? k.attachFull(maxImages) : k.attachImage}>
             {/* span keeps the tooltip alive over a disabled button */}
             <span className="inline-flex">
               <Button
                 className="text-(--ui-text-quaternary) hover:text-foreground"
-                disabled={!acceptsImage}
+                disabled={!acceptsImage || slotsLeft === 0}
                 onClick={() => fileInputRef.current?.click()}
                 size="icon-sm"
                 variant="ghost"
@@ -1379,7 +1391,7 @@ export const MediaStudioPage: FC = () => {
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [sortMode, setSortModeState] = useState<SortMode>(loadSortMode)
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
-  const [startImage, setStartImage] = useState('')
+  const [startImages, setStartImages] = useState<string[]>([])
   const [reuse, setReuse] = useState<ReuseState | null>(null)
   const [coverDraft, setCoverDraft] = useState<CoverDraft | null>(null)
   const [audioPanelJob, setAudioPanelJob] = useState<MediaJob | null>(null)
@@ -1512,14 +1524,25 @@ export const MediaStudioPage: FC = () => {
   // Hidden (not broken) on host apps that predate the SDK door.
   const onSendToChat = canAttachToComposer(host) ? sendToChat : null
 
+  // Reference-image list ops. Add dedupes and respects the ACTIVE model's cap
+  // (CreatePanel reports it via providersRef lookups at submit; here we cap
+  // generously at 8 — the panel enforces the per-model limit visually).
+  const onAddStartImage = useCallback((path: string) => {
+    setStartImages(prev => (prev.includes(path) || prev.length >= 8 ? prev : [...prev, path]))
+  }, [])
+
+  const onRemoveStartImage = useCallback((index: number) => {
+    setStartImages(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
   const onUseAsInput = useCallback((job: MediaJob) => {
     const path = job.result_paths[0]
 
     if (path) {
-      setStartImage(path)
+      onAddStartImage(path)
       scrollToTop()
     }
-  }, [scrollToTop])
+  }, [onAddStartImage, scrollToTop])
 
   // Star toggle: optimistic — flip the row in the query cache immediately,
   // then persist; the socket/interval refetch reconciles (and rolls back a
@@ -1541,7 +1564,7 @@ export const MediaStudioPage: FC = () => {
     const snapshot = reuseStateFromJob(job)
 
     setFilter(job.modality)
-    setStartImage(snapshot.startImage)
+    setStartImages(snapshot.startImages)
     setReuse(snapshot)
     setLightbox(null)
     scrollToTop()
@@ -1565,14 +1588,14 @@ export const MediaStudioPage: FC = () => {
 
       <CreatePanel
         modalityFilter={filter}
-        onClearStartImage={() => setStartImage('')}
+        onAddStartImage={onAddStartImage}
         onProviderCatalog={providers => {
           providersRef.current = providers
         }}
+        onRemoveStartImage={onRemoveStartImage}
         onReuseApplied={() => setReuse(null)}
-        onStartImage={setStartImage}
         reuse={reuse}
-        startImage={startImage}
+        startImages={startImages}
       />
 
       {coverDraft && (

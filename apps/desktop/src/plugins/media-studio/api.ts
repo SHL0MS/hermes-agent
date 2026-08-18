@@ -13,6 +13,9 @@ export interface ModelInfo {
   modality: 'image' | 'video' | 'audio'
   tier: string
   note?: string
+  /** Max reference images per submit (multi-reference edits, e.g. NBP
+   *  composes up to 8). Absent = 1. */
+  max_images?: number
   /** Action-launched rows (e.g. the cover renderer) — valid submit targets,
    *  hidden from the create panel's picker. */
   hidden?: boolean
