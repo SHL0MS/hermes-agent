@@ -300,6 +300,7 @@ const CreatePanel: FC<{
   // Drag-over highlight for the panel-wide start-image drop zone.
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const promptRef = useRef<HTMLTextAreaElement | null>(null)
 
   const patch = useCallback((update: Partial<typeof state>) => setState(prev => ({ ...prev, ...update })), [])
 
@@ -349,6 +350,16 @@ const CreatePanel: FC<{
     patch(fields)
     setCountChoice('1')
     onReuseApplied()
+    // Reuse means "edit then generate": park the cursor at the end of the
+    // restored prompt so typing continues it immediately.
+    requestAnimationFrame(() => {
+      const el = promptRef.current
+
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
   }, [onReuseApplied, patch, reuse])
 
   const modelChoices = useMemo(
@@ -620,6 +631,7 @@ const CreatePanel: FC<{
             }
           }}
           placeholder={k.promptPlaceholder}
+          ref={promptRef}
           value={state.prompt}
         />
         <div className="absolute bottom-1.5 right-1.5">
