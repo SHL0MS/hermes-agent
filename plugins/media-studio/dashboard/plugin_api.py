@@ -29,6 +29,7 @@ import os
 import sys
 import threading
 import time
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -150,6 +151,23 @@ _AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 # trust it. Costs the same in added latency, nothing more.
 _QUIESCENCE_S = 5.0
 
+# cache/images is SHARED: the gateway also caches INBOUND media there
+# (user-sent screenshots/attachments land as img_<hex>.<ext> via
+# cache_image_from_bytes) and other tools park downloads. Those are not
+# generations and don't belong in the library. A file qualifies only when
+# (a) the chat-capture hook left a provenance sidecar, or (b) its name has a
+# generation-tool shape:
+#   <prefix>_<YYYYMMDD>_<HHMMSS>_<hex>.<ext>   image/video gen providers
+#   <YYYYMMDD>-<HHMMSS>-<slug>.<ext>           music tool renders
+_GENERATED_NAME_RES = (
+    re.compile(r"^[a-z0-9][\w.-]*_\d{8}_\d{6}_[0-9a-f]{6,}\.", re.IGNORECASE),
+    re.compile(r"^\d{8}-\d{6}-"),
+)
+
+
+def _looks_generated(name: str) -> bool:
+    return any(pattern.match(name) for pattern in _GENERATED_NAME_RES)
+
 
 def _index_agent_media(store) -> int:
     from hermes_constants import get_hermes_home
@@ -201,6 +219,11 @@ def _index_agent_media(store) -> int:
                     meta = json.loads(sidecar.read_text(encoding="utf-8")) or {}
                 except (OSError, ValueError):
                     meta = {}
+            # No sidecar AND no generation-shaped name → inbound/parked media
+            # (user-sent screenshots, gateway attachment cache, ad-hoc
+            # downloads). Not a generation; leave it out of the library.
+            if not meta and not _looks_generated(path.name):
+                continue
             thumb = _engine_mod.make_thumbnail(path, modality)
             store.import_file(
                 provider=str(meta.get("provider") or "agent"),

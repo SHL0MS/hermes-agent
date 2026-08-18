@@ -202,9 +202,11 @@ def test_import_file_and_known_paths_dedupe(store, tmp_path):
 
 def test_agent_indexer_imports_settled_files_only(store, tmp_path, monkeypatch):
     """Chat generations land while the app runs: the indexer imports settled
-    files, skips studio materializations, mid-download files (fresh mtime,
-    zero size), and already-known paths — and it is re-runnable (live rescan),
-    picking up files that arrive between passes."""
+    generation-shaped files, skips studio materializations, mid-download files
+    (fresh mtime, zero size), already-known paths, and — the shared-cache
+    trap — inbound media without provenance (user-sent screenshots land as
+    img_<hex> via the gateway's attachment cache). Sidecar-bearing files
+    import regardless of name shape. Re-runnable (live rescan)."""
     import os as _os
 
     api = _load("plugin_api")
@@ -215,7 +217,7 @@ def test_agent_indexer_imports_settled_files_only(store, tmp_path, monkeypatch):
     monkeypatch.setattr(api._engine_mod, "make_thumbnail", lambda *_: None)
 
     old = time.time() - 60
-    settled = home / "cache" / "images" / "image_20260812_010101_aaaa.png"
+    settled = home / "cache" / "images" / "image_20260812_010101_aa11bb22.png"
     settled.write_bytes(b"png")
     _os.utime(settled, (old, old))
 
@@ -223,16 +225,31 @@ def test_agent_indexer_imports_settled_files_only(store, tmp_path, monkeypatch):
     studio.write_bytes(b"png")
     _os.utime(studio, (old, old))
 
-    fresh = home / "cache" / "images" / "image_downloading.png"
+    fresh = home / "cache" / "images" / "image_20260812_020202_cc33dd44.png"
     fresh.write_bytes(b"partial")  # mtime = now -> quiescence skip
 
     empty = home / "cache" / "videos" / "video_zero.mp4"
     empty.write_bytes(b"")
     _os.utime(empty, (old, old))
 
-    assert api._index_agent_media(store) == 1
+    # Inbound screenshot (gateway attachment cache shape): no sidecar, no
+    # generation-shaped name -> never imported.
+    screenshot = home / "cache" / "images" / "img_59a29310f2e9.png"
+    screenshot.write_bytes(b"png")
+    _os.utime(screenshot, (old, old))
+
+    # Odd name but WITH a provenance sidecar (chat-capture hook) -> imported.
+    hooked = home / "cache" / "images" / "oddly-named.png"
+    hooked.write_bytes(b"png")
+    _os.utime(hooked, (old, old))
+    (home / "cache" / "images" / "oddly-named.png.msmeta.json").write_text(
+        json.dumps({"provider": "fal", "model": "x", "params": {"prompt": "p"}})
+    )
+
+    assert api._index_agent_media(store) == 2
     paths = store.known_result_paths()
-    assert str(settled) in paths
+    assert str(settled) in paths and str(hooked) in paths
+    assert str(screenshot) not in paths
     assert str(studio) not in paths and str(fresh) not in paths and str(empty) not in paths
 
     # Second pass: nothing new -> 0; then a file settles -> picked up.
@@ -240,6 +257,8 @@ def test_agent_indexer_imports_settled_files_only(store, tmp_path, monkeypatch):
     _os.utime(fresh, (old, old))
     assert api._index_agent_media(store) == 1
     assert str(fresh) in store.known_result_paths()
+    # The screenshot stays out on every pass.
+    assert str(screenshot) not in store.known_result_paths()
 
 
 # ---------------------------------------------------------------------------
