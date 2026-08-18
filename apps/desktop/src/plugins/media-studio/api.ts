@@ -70,6 +70,8 @@ export interface MediaJob {
   /** Server-checked: every result file still exists on disk. Absent on older
    *  backends → treat as present (no degraded affordances). */
   files_present?: boolean
+  /** User-starred. SQLite int (0/1) on the wire; absent on older backends. */
+  favorite?: number
   created_at: number
   finished_at?: null | number
 }
@@ -293,6 +295,10 @@ export function cancelJob(id: string): Promise<{ ok: boolean }> {
   return call(`/jobs/${id}/cancel`, { method: 'POST' })
 }
 
+export function setJobFavorite(id: string, favorite: boolean): Promise<{ favorite: boolean; ok: boolean }> {
+  return call(`/jobs/${id}/favorite`, { body: { favorite }, method: 'POST' })
+}
+
 export function deleteJob(id: string): Promise<{ ok: boolean }> {
   return call(`/jobs/${id}`, { method: 'DELETE' })
 }
@@ -307,7 +313,32 @@ export function invalidateJobs(): void {
 // GeneratedImage). Small thumbs load eagerly; full media on lightbox open.
 // ---------------------------------------------------------------------------
 
-const dataUrlCache = new Map<string, Promise<string>>()
+// Data-URL cache with a byte budget. Unbounded caching held every thumb AND
+// every full video/audio ever viewed for the session's lifetime — after a
+// scroll through a large library the renderer sat on hundreds of MB and the
+// whole app got sluggish. LRU keyed on access; oversized single entries
+// (lightbox videos) are served but never retained.
+const DATA_URL_BUDGET = 48 * 1024 * 1024
+const DATA_URL_MAX_ENTRY = 24 * 1024 * 1024
+
+interface CacheEntry {
+  promise: Promise<string>
+  bytes: number
+}
+
+const dataUrlCache = new Map<string, CacheEntry>()
+let dataUrlBytes = 0
+
+function evictUntil(budget: number): void {
+  for (const [key, entry] of dataUrlCache) {
+    if (dataUrlBytes <= budget) {
+      return
+    }
+
+    dataUrlCache.delete(key)
+    dataUrlBytes -= entry.bytes
+  }
+}
 
 export function mediaDataUrl(path: string): Promise<string> {
   const bridge = window.hermesDesktop
@@ -316,17 +347,40 @@ export function mediaDataUrl(path: string): Promise<string> {
     return Promise.reject(new Error('desktop bridge unavailable'))
   }
 
-  let cached = dataUrlCache.get(path)
+  const cached = dataUrlCache.get(path)
 
-  if (!cached) {
-    cached = bridge.readFileDataUrl(path).catch((error: unknown) => {
-      dataUrlCache.delete(path)
-      throw error
-    })
+  if (cached) {
+    // LRU: re-insert on access so hot thumbs outlive one-off full reads.
+    dataUrlCache.delete(path)
     dataUrlCache.set(path, cached)
+
+    return cached.promise
   }
 
-  return cached
+  const entry: CacheEntry = { bytes: 0, promise: Promise.resolve('') }
+
+  entry.promise = bridge.readFileDataUrl(path).then(
+    url => {
+      entry.bytes = url.length
+
+      if (url.length > DATA_URL_MAX_ENTRY) {
+        // Too big to retain: hand it to the caller, drop it from the cache.
+        dataUrlCache.delete(path)
+      } else {
+        dataUrlBytes += entry.bytes
+        evictUntil(DATA_URL_BUDGET)
+      }
+
+      return url
+    },
+    (error: unknown) => {
+      dataUrlCache.delete(path)
+      throw error
+    }
+  )
+  dataUrlCache.set(path, entry)
+
+  return entry.promise
 }
 
 /** Streamed URL for video playback (Range support, no data-URL size cap). */

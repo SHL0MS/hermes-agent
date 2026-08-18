@@ -115,6 +115,8 @@ class MediaStore:
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(media_jobs)")}
         if "session_id" not in columns:
             self._conn.execute("ALTER TABLE media_jobs ADD COLUMN session_id TEXT")
+        if "favorite" not in columns:
+            self._conn.execute("ALTER TABLE media_jobs ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         with self._lock:

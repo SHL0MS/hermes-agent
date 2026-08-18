@@ -49,6 +49,7 @@ import {
   type ModelInfo,
   type ProviderInfo,
   PROVIDERS_KEY,
+  setJobFavorite,
   setProviderKey,
   type SubmitBody,
   submitJob
@@ -116,12 +117,43 @@ function fmtDuration(s: unknown): string | null {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
-/** Async media <img> fed by the bridge data-URL cache. */
+/** Async media <img> fed by the bridge data-URL cache. Reads are gated on
+ *  viewport proximity — a big library mounts hundreds of cards, and eagerly
+ *  fetching every one through the IPC bridge on mount is what made the app
+ *  crawl. The placeholder holds layout until the card scrolls near. */
 const Thumb: FC<{ alt: string; className?: string; path: string }> = ({ alt, className, path }) => {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const holderRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    const el = holderRef.current
+
+    if (!el) {
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '600px' }
+    )
+
+    observer.observe(el)
+
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!visible) {
+      return
+    }
+
     let cancelled = false
 
     setSrc('')
@@ -133,7 +165,7 @@ const Thumb: FC<{ alt: string; className?: string; path: string }> = ({ alt, cla
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, visible])
 
   if (failed) {
     return (
@@ -144,7 +176,7 @@ const Thumb: FC<{ alt: string; className?: string; path: string }> = ({ alt, cla
   }
 
   if (!src) {
-    return <div className={cn('animate-pulse bg-(--ui-bg-tertiary)', className)} />
+    return <div className={cn('animate-pulse bg-(--ui-bg-tertiary)', className)} ref={holderRef} />
   }
 
   return <img alt={alt} className={className} draggable={false} src={src} />
@@ -869,7 +901,8 @@ const Lightbox: FC<{
   onNext: (() => void) | null
   onMoreLikeThis: ((job: MediaJob) => void) | null
   onReuseSettings: ((job: MediaJob) => void) | null
-}> = ({ job, onClose, onMoreLikeThis, onNext, onPrev, onReuseSettings }) => {
+  onToggleFavorite: ((job: MediaJob) => void) | null
+}> = ({ job, onClose, onMoreLikeThis, onNext, onPrev, onReuseSettings, onToggleFavorite }) => {
   const k = useStudio()
   const [src, setSrc] = useState('')
   const [copied, setCopied] = useState(false)
@@ -1038,6 +1071,18 @@ const Lightbox: FC<{
                   </Button>
                 </Tip>
               )}
+              {onToggleFavorite && (
+                <Tip label={job.favorite ? k.unfavorite : k.favorite}>
+                  <Button
+                    className={cn('shrink-0', job.favorite ? 'text-yellow-400' : 'text-white')}
+                    onClick={() => onToggleFavorite(job)}
+                    size="icon-sm"
+                    variant="ghost"
+                  >
+                    <Codicon name={job.favorite ? 'star-full' : 'star-empty'} />
+                  </Button>
+                </Tip>
+              )}
               <Tip label={copied ? k.copiedPrompt : k.copyPrompt}>
                 <Button className="shrink-0 text-white" onClick={copyPrompt} size="icon-sm" variant="ghost">
                   <Codicon name={copied ? 'check' : 'copy'} />
@@ -1079,15 +1124,20 @@ const LibraryCard: FC<{
   onRemove: (id: string) => void
   onRetry: (job: MediaJob) => void
   onReuseSettings?: (job: MediaJob) => void
+  onToggleFavorite?: (job: MediaJob) => void
   onCoverThis?: (job: MediaJob) => void
   onEditAudio?: (job: MediaJob) => void
   mixSelected?: boolean
   onToggleMixSelect?: (job: MediaJob) => void
-}> = ({ job, mixSelected, onCoverThis, onEditAudio, onOpen, onRemove, onRetry, onReuseSettings, onSendToChat, onToggleMixSelect, onUseAsInput }) => {
+}> = ({ job, mixSelected, onCoverThis, onEditAudio, onOpen, onRemove, onRetry, onReuseSettings, onSendToChat, onToggleFavorite, onToggleMixSelect, onUseAsInput }) => {
   const k = useStudio()
   const failed = job.state === 'failed' || job.state === 'expired'
   const missing = !failed && !filesPresent(job)
-  const thumb = job.thumb_paths[0] ?? job.result_paths[0]
+  // Card art: the server-side thumbnail when it exists; images may fall back
+  // to the original (small enough), but audio/video must NOT — the fallback
+  // used to pull entire mp3/mp4 files through the bridge into an <img> that
+  // couldn't render them, which is what made big libraries drag the app down.
+  const thumb = job.thumb_paths[0] ?? (job.modality === 'image' ? job.result_paths[0] : undefined)
   const prompt = jobPrompt(job)
 
   // Reveal target: the result when it's on disk; otherwise the input image
@@ -1170,6 +1220,26 @@ const LibraryCard: FC<{
         <span className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[0.625rem] text-white">
           {k.agentSource}
         </span>
+      )}
+
+      {/* Favorite star: persistent when starred, hover-revealed otherwise.
+          Sits below the agent badge on agent rows so the two never collide. */}
+      {onToggleFavorite && !failed && !missing && (
+        <button
+          className={cn(
+            'absolute right-1.5 rounded bg-black/50 p-1 text-white transition-opacity hover:bg-black/70',
+            job.source === 'agent' ? 'top-8' : 'top-1.5',
+            job.favorite ? 'text-yellow-400 opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+          onClick={event => {
+            event.stopPropagation()
+            onToggleFavorite(job)
+          }}
+          title={job.favorite ? k.unfavorite : k.favorite}
+          type="button"
+        >
+          <Codicon name={job.favorite ? 'star-full' : 'star-empty'} size="0.8125rem" />
+        </button>
       )}
 
       {prompt && !failed && !missing && (
@@ -1298,9 +1368,11 @@ const LibraryCard: FC<{
 
 export const MediaStudioPage: FC = () => {
   const k = useStudio()
+  const queryClient = useQueryClient()
   // One page-wide mode: gates BOTH the create panel's model dropdown and the
   // library grid.
   const [filter, setFilter] = useState<ModalityFilter>('all')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
   const [reuse, setReuse] = useState<ReuseState | null>(null)
@@ -1359,7 +1431,16 @@ export const MediaStudioPage: FC = () => {
   }, [jobs])
   const active = jobs.filter(job => !isTerminal(job.state))
   const library = jobs.filter(job => isTerminal(job.state) && job.state !== 'cancelled')
-  const filtered = filter === 'all' ? library : library.filter(job => job.modality === filter)
+  const modalityFiltered = filter === 'all' ? library : library.filter((job: MediaJob) => job.modality === filter)
+
+  // Favorites float to the front of the grid (stable within each group:
+  // newest-first order is preserved on both sides); the star toggle in the
+  // header narrows to favorites only.
+  const filtered = useMemo(() => {
+    const source = favoritesOnly ? modalityFiltered.filter((job: MediaJob) => Boolean(job.favorite)) : modalityFiltered
+
+    return [...source].sort((a: MediaJob, b: MediaJob) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)))
+  }, [favoritesOnly, modalityFiltered])
 
   // Lightbox prev/next walk the filtered grid in visual order, skipping rows
   // with nothing to show (failed/expired). Derived from the live list so the
@@ -1430,6 +1511,18 @@ export const MediaStudioPage: FC = () => {
       scrollToTop()
     }
   }, [scrollToTop])
+
+  // Star toggle: optimistic — flip the row in the query cache immediately,
+  // then persist; the socket/interval refetch reconciles (and rolls back a
+  // failed write on the next authoritative fetch).
+  const onToggleFavorite = useCallback((job: MediaJob) => {
+    const next = !job.favorite
+
+    queryClient.setQueryData(JOBS_KEY, (old: { jobs: MediaJob[] } | undefined) =>
+      old ? { jobs: old.jobs.map(j => (j.id === job.id ? { ...j, favorite: next ? 1 : 0 } : j)) } : old
+    )
+    void setJobFavorite(job.id, next).catch(() => invalidateJobs())
+  }, [queryClient])
 
   // "Reuse settings": restore the whole brief — model, prompt, parameters,
   // and the reference image when its file still exists. The modality filter
@@ -1512,9 +1605,25 @@ export const MediaStudioPage: FC = () => {
         )}
         <div className="flex items-center justify-between">
           <h2 className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">{k.library}</h2>
-          {/* Finder-style thumbnail size slider (persisted). */}
-          <label className="flex items-center gap-1.5 text-(--ui-text-quaternary)">
-            <Codicon name="screen-normal" size="0.7rem" />
+          <div className="flex items-center gap-3">
+            {/* Favorites-only toggle: starred rows already float to the front;
+                this narrows the grid to just them. */}
+            <Tip label={favoritesOnly ? k.showAll : k.showFavorites}>
+              <button
+                aria-label={favoritesOnly ? k.showAll : k.showFavorites}
+                className={cn(
+                  'flex items-center rounded p-1 transition-colors',
+                  favoritesOnly ? 'text-yellow-400' : 'text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)'
+                )}
+                onClick={() => setFavoritesOnly(v => !v)}
+                type="button"
+              >
+                <Codicon name={favoritesOnly ? 'star-full' : 'star-empty'} size="0.85rem" />
+              </button>
+            </Tip>
+            {/* Finder-style thumbnail size slider (persisted). */}
+            <label className="flex items-center gap-1.5 text-(--ui-text-quaternary)">
+              <Codicon name="screen-normal" size="0.7rem" />
             <input
               aria-label={k.thumbSize}
               className="h-1 w-28 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-tertiary)"
@@ -1526,8 +1635,9 @@ export const MediaStudioPage: FC = () => {
               type="range"
               value={thumbSize}
             />
-            <Codicon name="screen-full" size="0.85rem" />
-          </label>
+              <Codicon name="screen-full" size="0.85rem" />
+            </label>
+          </div>
         </div>
         {filtered.length === 0 ? (
           <EmptyState description={k.emptyLibraryHint} title={k.emptyLibrary} />
@@ -1559,6 +1669,7 @@ export const MediaStudioPage: FC = () => {
                 onRetry={onRetry}
                 onReuseSettings={onReuseSettings}
                 onSendToChat={onSendToChat}
+                onToggleFavorite={onToggleFavorite}
                 onToggleMixSelect={job1 =>
                   setMixSelection(sel => audioSelectionToggle(sel, job1.id))
                 }
@@ -1587,6 +1698,7 @@ export const MediaStudioPage: FC = () => {
           onNext={lightboxNext ? () => setLightbox(lightboxNext) : null}
           onPrev={lightboxPrev ? () => setLightbox(lightboxPrev) : null}
           onReuseSettings={canResubmit(lightboxJob ?? lightbox) ? onReuseSettings : null}
+          onToggleFavorite={onToggleFavorite}
         />
       )}
     </div>

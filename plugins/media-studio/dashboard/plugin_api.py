@@ -696,6 +696,18 @@ def cancel_job(job_id: str) -> Dict[str, Any]:
     return {"ok": True}
 
 
+@router.post("/jobs/{job_id}/favorite")
+def set_favorite(job_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Toggle/set the favorite flag: {"favorite": true|false}."""
+    _ensure_engine()
+    job = _store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    favorite = 1 if body.get("favorite") else 0
+    _store.update_job(job_id, favorite=favorite)
+    return {"ok": True, "favorite": bool(favorite)}
+
+
 @router.delete("/jobs/{job_id}")
 def delete_job(job_id: str) -> Dict[str, Any]:
     engine = _ensure_engine()

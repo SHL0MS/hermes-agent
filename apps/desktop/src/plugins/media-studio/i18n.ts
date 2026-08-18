@@ -39,6 +39,10 @@ type StudioMessages = {
   sendToChat: string
   useAsInput: string
   reuseSettings: string
+  favorite: string
+  unfavorite: string
+  showFavorites: string
+  showAll: string
   revealFile: string
   copyPath: string
   copiedPath: string
@@ -176,6 +180,10 @@ const en: StudioMessages = {
   sendToChat: 'Send to chat',
   useAsInput: 'Use as input',
   reuseSettings: 'Reuse settings',
+  favorite: 'Favorite',
+  unfavorite: 'Unfavorite',
+  showFavorites: 'Show favorites only',
+  showAll: 'Show all',
   revealFile: 'Reveal in Finder',
   copyPath: 'Copy path',
   copiedPath: 'Path copied',
@@ -312,6 +320,10 @@ const ja: StudioMessages = {
   sendToChat: 'チャットに送る',
   useAsInput: '入力として使用',
   reuseSettings: '設定を再利用',
+  favorite: 'お気に入り',
+  unfavorite: 'お気に入り解除',
+  showFavorites: 'お気に入りのみ表示',
+  showAll: 'すべて表示',
   revealFile: 'Finderで表示',
   copyPath: 'パスをコピー',
   copiedPath: 'パスをコピーしました',
@@ -448,6 +460,10 @@ const zh: StudioMessages = {
   sendToChat: '发送到聊天',
   useAsInput: '用作输入',
   reuseSettings: '重用设置',
+  favorite: '收藏',
+  unfavorite: '取消收藏',
+  showFavorites: '仅显示收藏',
+  showAll: '显示全部',
   revealFile: '在 Finder 中显示',
   copyPath: '复制路径',
   copiedPath: '已复制路径',
@@ -584,6 +600,10 @@ const zhHant: StudioMessages = {
   sendToChat: '傳送到聊天',
   useAsInput: '用作輸入',
   reuseSettings: '重用設定',
+  favorite: '收藏',
+  unfavorite: '取消收藏',
+  showFavorites: '僅顯示收藏',
+  showAll: '顯示全部',
   revealFile: '在 Finder 中顯示',
   copyPath: '複製路徑',
   copiedPath: '已複製路徑',

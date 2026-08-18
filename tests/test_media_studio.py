@@ -740,3 +740,27 @@ def test_small_input_image_passes_through_unrecoded(tmp_path):
 
     assert uri.startswith("data:image/png;base64,")
     assert base64.b64decode(uri.split(",", 1)[1]) == src.read_bytes()
+
+
+def test_favorite_column_migrates_persists_and_defaults_off(store, tmp_path):
+    """The favorite flag: default 0 on new rows, round-trips through
+    update_job, and survives reopen (ALTER-based migration is additive)."""
+    job_id = store.import_file(
+        provider="agent", model="tool", modality="image",
+        result_path=str(tmp_path / "x.png"), thumb_path=None,
+        source="agent", created_at=time.time(),
+    )
+    row = store.get_job(job_id)
+    assert not row.get("favorite")
+
+    store.update_job(job_id, favorite=1)
+    assert store.get_job(job_id)["favorite"] == 1
+
+    # Reopen the same DB file: migration must be idempotent and the flag kept.
+    path = tmp_path / "media_studio.db"
+    store.close()
+    reopened = engine_mod.MediaStore(path=path)
+    try:
+        assert reopened.get_job(job_id)["favorite"] == 1
+    finally:
+        reopened.close()
