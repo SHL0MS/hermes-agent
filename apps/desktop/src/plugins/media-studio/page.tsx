@@ -59,8 +59,10 @@ import {
   cardDragPayload,
   clampThumb,
   droppedPath,
+  loadSortMode,
   loadThumbSize,
   modelAcceptsImage,
+  saveSortMode,
   saveThumbSize,
   startImageIssue,
   THUMB_MAX,
@@ -74,7 +76,7 @@ import {
 } from './audio-select'
 import { AudioPanel } from './AudioPanel'
 import { useStudio } from './i18n'
-import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, type ReuseState, reuseStateFromJob } from './job-params'
+import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, type ReuseState, reuseStateFromJob, SORT_MODES, sortJobs, type SortMode } from './job-params'
 import { MiniAudioPlayer } from './MiniAudioPlayer'
 import { MixBar } from './MixBar'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
@@ -992,7 +994,7 @@ const Lightbox: FC<{
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-16 py-8"
       onClick={onClose}
       role="presentation"
     >
@@ -1046,7 +1048,9 @@ const Lightbox: FC<{
         <div className="w-full max-w-2xl rounded-lg bg-black/70 p-3 text-white backdrop-blur">
           {prompt && (
             <div className="flex items-start gap-2">
-              <p className="min-w-0 flex-1 whitespace-pre-wrap text-[0.75rem] leading-relaxed">{prompt}</p>
+              {/* Long prompts scroll inside a capped box instead of crowding
+                  the media out of the viewport. */}
+              <p className="max-h-24 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap text-[0.75rem] leading-relaxed">{prompt}</p>
               {onMoreLikeThis && prompt && (
                 <Tip label={k.moreLikeThis}>
                   <Button
@@ -1373,6 +1377,7 @@ export const MediaStudioPage: FC = () => {
   // library grid.
   const [filter, setFilter] = useState<ModalityFilter>('all')
   const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const [sortMode, setSortModeState] = useState<SortMode>(loadSortMode)
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImage, setStartImage] = useState('')
   const [reuse, setReuse] = useState<ReuseState | null>(null)
@@ -1393,6 +1398,11 @@ export const MediaStudioPage: FC = () => {
   const setThumbSize = useCallback((value: number) => {
     setThumbSizeState(value)
     saveThumbSize(value)
+  }, [])
+
+  const setSortMode = useCallback((value: SortMode) => {
+    setSortModeState(value)
+    saveSortMode(value)
   }, [])
 
   const { data } = useQuery({
@@ -1433,14 +1443,13 @@ export const MediaStudioPage: FC = () => {
   const library = jobs.filter(job => isTerminal(job.state) && job.state !== 'cancelled')
   const modalityFiltered = filter === 'all' ? library : library.filter((job: MediaJob) => job.modality === filter)
 
-  // Favorites float to the front of the grid (stable within each group:
-  // newest-first order is preserved on both sides); the star toggle in the
-  // header narrows to favorites only.
+  // The star toggle is a pure FILTER — starring never reorders the grid.
+  // Ordering belongs to the sort dropdown alone.
   const filtered = useMemo(() => {
     const source = favoritesOnly ? modalityFiltered.filter((job: MediaJob) => Boolean(job.favorite)) : modalityFiltered
 
-    return [...source].sort((a: MediaJob, b: MediaJob) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)))
-  }, [favoritesOnly, modalityFiltered])
+    return sortJobs(source, sortMode)
+  }, [favoritesOnly, modalityFiltered, sortMode])
 
   // Lightbox prev/next walk the filtered grid in visual order, skipping rows
   // with nothing to show (failed/expired). Derived from the live list so the
@@ -1606,8 +1615,21 @@ export const MediaStudioPage: FC = () => {
         <div className="flex items-center justify-between">
           <h2 className="text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">{k.library}</h2>
           <div className="flex items-center gap-3">
-            {/* Favorites-only toggle: starred rows already float to the front;
-                this narrows the grid to just them. */}
+            {/* Sort mode: the only thing that orders the grid. */}
+            <Select onValueChange={value => setSortMode(value as SortMode)} value={sortMode}>
+              <SelectTrigger className="h-6 w-32 text-[0.6875rem]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_MODES.map(mode => (
+                  <SelectItem key={mode} value={mode}>
+                    {k.sortLabel(mode)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Favorites-only toggle: a pure filter — narrows the grid to
+                starred rows without touching the order. */}
             <Tip label={favoritesOnly ? k.showAll : k.showFavorites}>
               <button
                 aria-label={favoritesOnly ? k.showAll : k.showFavorites}

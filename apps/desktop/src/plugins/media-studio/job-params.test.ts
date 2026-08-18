@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MediaJob } from './api'
-import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, reuseStateFromJob } from './job-params'
+import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, reuseStateFromJob, sortJobs } from './job-params'
 
 function job(params: Record<string, unknown>): MediaJob {
   return {
@@ -233,5 +233,40 @@ describe('reuseStateFromJob', () => {
       lyrics: '',
       vocal: ''
     })
+  })
+})
+
+describe('sortJobs', () => {
+  const mk = (id: string, created: number, prompt: string, model = 'fal-ai/x'): MediaJob => ({
+    ...job({ prompt }),
+    id,
+    created_at: created,
+    model
+  })
+
+  const rows = [
+    mk('a', 100, 'zebra'),
+    mk('b', 300, 'apple'),
+    mk('c', 200, '', 'bytedance/z'),
+    mk('d', 400, 'apple', 'alibaba/a')
+  ]
+
+  it('never mutates the input and defaults stay newest-first', () => {
+    const input = [...rows]
+
+    expect(sortJobs(input, 'newest').map(j => j.id)).toEqual(['d', 'b', 'c', 'a'])
+    expect(input.map(j => j.id)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('oldest inverts newest', () => {
+    expect(sortJobs(rows, 'oldest').map(j => j.id)).toEqual(['a', 'c', 'b', 'd'])
+  })
+
+  it('prompt groups alphabetically, promptless rows last, ties newest-first', () => {
+    expect(sortJobs(rows, 'prompt').map(j => j.id)).toEqual(['d', 'b', 'a', 'c'])
+  })
+
+  it('model sorts by model id with newest-first ties', () => {
+    expect(sortJobs(rows, 'model').map(j => j.id)).toEqual(['d', 'c', 'b', 'a'])
   })
 })

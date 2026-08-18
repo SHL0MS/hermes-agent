@@ -133,6 +133,37 @@ export function jobPrompt(job: MediaJob): string {
   return typeof prompt === 'string' ? prompt : ''
 }
 
+/** Library sort modes. 'newest' is the default (matches the server order). */
+export type SortMode = 'model' | 'newest' | 'oldest' | 'prompt'
+
+export const SORT_MODES: readonly SortMode[] = ['newest', 'oldest', 'prompt', 'model']
+
+/** Sort a job list for the library grid. Pure — returns a new array.
+ *  Ties inside prompt/model groups fall back to newest-first so the grid
+ *  stays deterministic. Promptless rows (agent imports, DSP derivations)
+ *  sort after prompted ones in prompt mode. */
+export function sortJobs(jobs: readonly MediaJob[], mode: SortMode): MediaJob[] {
+  const byNewest = (a: MediaJob, b: MediaJob) => b.created_at - a.created_at
+
+  const compare: Record<SortMode, (a: MediaJob, b: MediaJob) => number> = {
+    model: (a, b) => a.model.localeCompare(b.model) || byNewest(a, b),
+    newest: byNewest,
+    oldest: (a, b) => a.created_at - b.created_at,
+    prompt: (a, b) => {
+      const pa = jobPrompt(a).trim().toLowerCase()
+      const pb = jobPrompt(b).trim().toLowerCase()
+
+      if (!pa || !pb) {
+        return Number(!pa) - Number(!pb) || byNewest(a, b)
+      }
+
+      return pa.localeCompare(pb) || byNewest(a, b)
+    }
+  }
+
+  return [...jobs].sort(compare[mode])
+}
+
 /** Clamp a custom batch-count field to the API's accepted range. */
 export function clampCount(raw: string, max = 50): number {
   const parsed = Number.parseInt(raw, 10)

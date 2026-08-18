@@ -128,3 +128,26 @@ export function saveThumbSize(value: number): void {
     // storage unavailable — session-only sizing is fine
   }
 }
+
+const SORT_KEY = 'hermes-media-studio.sort'
+
+const SORT_VALUES = new Set(['newest', 'oldest', 'prompt', 'model'])
+
+/** Persisted library sort mode (same localStorage pattern as thumb size). */
+export function loadSortMode(): 'model' | 'newest' | 'oldest' | 'prompt' {
+  try {
+    const raw = window.localStorage.getItem(SORT_KEY) ?? 'newest'
+
+    return (SORT_VALUES.has(raw) ? raw : 'newest') as 'model' | 'newest' | 'oldest' | 'prompt'
+  } catch {
+    return 'newest'
+  }
+}
+
+export function saveSortMode(value: string): void {
+  try {
+    window.localStorage.setItem(SORT_KEY, SORT_VALUES.has(value) ? value : 'newest')
+  } catch {
+    // storage unavailable — session-only sorting is fine
+  }
+}

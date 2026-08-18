@@ -22,6 +22,7 @@ type StudioMessages = {
   resolution: string
   duration: string
   seconds: (n: number) => string
+  sortLabel: (mode: 'model' | 'newest' | 'oldest' | 'prompt') => string
   seed: string
   seedPlaceholder: string
   audio: string
@@ -163,6 +164,8 @@ const en: StudioMessages = {
   resolution: 'Resolution',
   duration: 'Duration',
   seconds: n => `${n}s`,
+  sortLabel: mode =>
+    ({ model: 'By model', newest: 'Newest first', oldest: 'Oldest first', prompt: 'By prompt' })[mode],
   seed: 'Seed',
   seedPlaceholder: 'Random',
   audio: 'Audio',
@@ -303,6 +306,7 @@ const ja: StudioMessages = {
   resolution: '解像度',
   duration: '長さ',
   seconds: n => `${n}秒`,
+  sortLabel: mode => ({ model: 'モデル順', newest: '新しい順', oldest: '古い順', prompt: 'プロンプト順' })[mode],
   seed: 'シード',
   seedPlaceholder: 'ランダム',
   audio: '音声',
@@ -443,6 +447,7 @@ const zh: StudioMessages = {
   resolution: '分辨率',
   duration: '时长',
   seconds: n => `${n}秒`,
+  sortLabel: mode => ({ model: '按模型', newest: '最新优先', oldest: '最早优先', prompt: '按提示词' })[mode],
   seed: '种子',
   seedPlaceholder: '随机',
   audio: '音频',
@@ -583,6 +588,7 @@ const zhHant: StudioMessages = {
   resolution: '解析度',
   duration: '時長',
   seconds: n => `${n}秒`,
+  sortLabel: mode => ({ model: '按模型', newest: '最新優先', oldest: '最早優先', prompt: '按提示詞' })[mode],
   seed: '種子',
   seedPlaceholder: '隨機',
   audio: '音訊',
