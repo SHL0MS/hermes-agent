@@ -20,8 +20,8 @@ import { $selectedStoredSessionId } from '@/store/session'
 import type { CronJob } from '@/types/hermes'
 
 import { jobState, jobTitle, STATE_DOT } from '../../cron/job-state'
-import { SidebarPanelLabel } from '../../shell/sidebar-label'
 
+import { SidebarSectionHeader } from './chrome'
 import { SidebarLoadMoreRow } from './load-more-row'
 
 const INACTIVE_STATES = new Set(['completed', 'disabled', 'error', 'paused'])
@@ -176,19 +176,7 @@ export function SidebarCronJobsSection({
 
   return (
     <SidebarGroup className="shrink-0 p-0 pb-1">
-      <div className="group/section flex shrink-0 items-center justify-between pb-1 pt-1.5">
-        <button
-          className="group/section-label flex w-fit min-w-0 items-center gap-1 bg-transparent text-left leading-none"
-          onClick={onToggle}
-          type="button"
-        >
-          <SidebarPanelLabel>{label}</SidebarPanelLabel>
-          <DisclosureCaret
-            className="text-(--ui-text-tertiary) opacity-0 transition group-hover/section-label:opacity-100"
-            open={open}
-          />
-        </button>
-      </div>
+      <SidebarSectionHeader label={label} onToggle={onToggle} open={open} />
       {open && (
         <SidebarGroupContent className="scrollbar-fade flex max-h-72 flex-col gap-px overflow-x-hidden overflow-y-auto overscroll-contain pb-1.75 compact:max-h-none compact:overflow-visible">
           {shown.map(job => (

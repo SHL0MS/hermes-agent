@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 
+import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
 import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { RowButton } from '@/components/ui/row-button'
@@ -16,6 +17,80 @@ import { $sidebarRowMeta } from '@/store/layout'
 /** The muted slot beside a section label (loading glyph, status hint). */
 export function SidebarSectionMeta({ children }: { children: React.ReactNode }) {
   return <span className="shrink-0 text-[0.6875rem] font-medium text-(--ui-text-quaternary)">{children}</span>
+}
+
+interface SidebarSectionHeaderProps {
+  label: string
+  open: boolean
+  onToggle: () => void
+  action?: React.ReactNode
+  meta?: React.ReactNode
+  icon?: React.ReactNode
+  // When false the section can't be collapsed: the label renders static (no
+  // toggle, no caret) and the section is always open. Used for the single-
+  // project view, where collapsing one project makes no sense.
+  collapsible?: boolean
+}
+
+/**
+ * Section header (PINNED / SESSIONS / a messaging platform / CRON JOBS).
+ *
+ * Sticky: the sections that scroll in the shared sidebar scroller (Pinned,
+ * messaging, cron) would otherwise carry their header out of view with the
+ * rows — the label clipped under the search field while its chats were still
+ * passing. Pinning it keeps the label readable for the whole length of its
+ * section, and each header hands off to the next at its section boundary
+ * (sticky is constrained to the parent SidebarGroup). For sections that own
+ * an internal scroller instead (Sessions, search results — flex-1 +
+ * overflow-hidden roots), top-0 in the section box is where the header
+ * already sits, so the same classes are inert there.
+ *
+ * The fill masks rows sliding beneath the stuck label, and data-glass-opaque
+ * keeps that mask filled when window glass thins the surface tokens — the
+ * same contract as a dragged sidebar row (see session-row.tsx).
+ */
+export function SidebarSectionHeader({
+  label,
+  open,
+  onToggle,
+  action,
+  meta,
+  icon,
+  collapsible = true
+}: SidebarSectionHeaderProps) {
+  const labelBody = (
+    <>
+      {icon}
+      <SidebarPanelLabel>{label}</SidebarPanelLabel>
+      {meta && <SidebarSectionMeta>{meta}</SidebarSectionMeta>}
+    </>
+  )
+
+  return (
+    <div
+      className="group/section sticky top-0 z-10 flex shrink-0 items-center justify-between gap-1 bg-(--ui-sidebar-surface-background) pb-1 pt-1.5"
+      data-glass-opaque=""
+    >
+      {collapsible ? (
+        <button
+          // min-w-0 lets the label truncate at narrow sidebar widths instead of
+          // pushing the header's trailing action icons out of view.
+          className="group/section-label flex w-fit min-w-0 items-center gap-1 bg-transparent text-left leading-none"
+          onClick={onToggle}
+          type="button"
+        >
+          {labelBody}
+          <DisclosureCaret
+            className="text-(--ui-text-tertiary) opacity-0 transition group-hover/section-label:opacity-100"
+            open={open}
+          />
+        </button>
+      ) : (
+        <div className="flex w-fit min-w-0 items-center gap-1 leading-none">{labelBody}</div>
+      )}
+      {action}
+    </div>
+  )
 }
 
 // ── Row geometry (session row is canonical — everything composes these) ─────

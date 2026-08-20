@@ -1,4 +1,4 @@
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type * as React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -180,5 +180,89 @@ describe('SidebarSessionsSection memoization & virtualizer stability', () => {
 
     const thirdRowsRef = mockVirtualListPropsHistory[2].rows
     expect(thirdRowsRef).not.toBe(secondRowsRef)
+  })
+})
+
+describe('SidebarSectionHeader stickiness', () => {
+  // The Pinned / messaging / cron sections scroll in the shared sidebar
+  // scroller; without sticky positioning their headers ride out of view under
+  // the search field while their own rows are still passing. The Sessions
+  // section survived only because it owns an internal scroller. Pin the
+  // contract here so a header class rework can't silently regress the
+  // shared-scroller sections again.
+  it('renders the section header sticky with an opaque fill masking rows that scroll beneath it', () => {
+    render(
+      <SidebarSessionsSection
+        activeSessionId={null}
+        emptyState={<div>Empty</div>}
+        label="Pinned"
+        onArchiveSession={noop}
+        onDeleteSession={noop}
+        onResumeSession={noop}
+        onToggle={noop}
+        onTogglePin={noop}
+        onToggleUnread={noop}
+        open={true}
+        pinned={true}
+        sessions={generateSessions(3)}
+      />
+    )
+
+    const header = screen.getByRole('button', { name: /Pinned/ }).parentElement as HTMLElement
+
+    expect(header.className).toContain('sticky')
+    expect(header.className).toContain('top-0')
+    // A see-through stuck header reads as rows bleeding through the label:
+    // it needs its own fill, and data-glass-opaque keeps that fill solid
+    // when window glass makes the surface tokens transparent.
+    expect(header.className).toContain('bg-(--ui-sidebar-surface-background)')
+    expect(header.hasAttribute('data-glass-opaque')).toBe(true)
+  })
+
+  it('keeps the header toggle working and renders the static variant sticky too', () => {
+    const onToggle = vi.fn()
+
+    const { rerender } = render(
+      <SidebarSessionsSection
+        activeSessionId={null}
+        emptyState={<div>Empty</div>}
+        label="Pinned"
+        onArchiveSession={noop}
+        onDeleteSession={noop}
+        onResumeSession={noop}
+        onToggle={onToggle}
+        onTogglePin={noop}
+        onToggleUnread={noop}
+        open={true}
+        pinned={true}
+        sessions={generateSessions(2)}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Pinned/ }))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+
+    // Non-collapsible headers (entered-project view) share the same shell.
+    rerender(
+      <SidebarSessionsSection
+        activeSessionId={null}
+        collapsible={false}
+        emptyState={<div>Empty</div>}
+        label="Pinned"
+        onArchiveSession={noop}
+        onDeleteSession={noop}
+        onResumeSession={noop}
+        onToggle={onToggle}
+        onTogglePin={noop}
+        onToggleUnread={noop}
+        open={true}
+        pinned={true}
+        sessions={generateSessions(2)}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: /Pinned/ })).toBeNull()
+    const staticHeader = screen.getByText('Pinned').closest('.group\\/section') as HTMLElement
+    expect(staticHeader.className).toContain('sticky')
   })
 })
