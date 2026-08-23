@@ -731,6 +731,53 @@ def set_favorite(job_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "favorite": bool(favorite)}
 
 
+@router.post("/styles/train")
+def train_style(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Start a Krea LoRA training job (portal gateway or BYOK)."""
+    engine = _ensure_engine()
+    krea = engine.providers.get("krea")
+    if krea is None:
+        raise HTTPException(status_code=404, detail="Krea provider not configured")
+    name = body.get("name")
+    urls = body.get("urls") or []
+    steps = body.get("max_train_steps") or 500
+    try:
+        steps = int(steps)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="max_train_steps must be an integer")
+    return krea.train_style(str(name), [str(u) for u in urls], steps)
+
+
+@router.get("/styles")
+def list_styles() -> Dict[str, Any]:
+    """GET /styles — the caller's portal-scoped styles."""
+    engine = _ensure_engine()
+    krea = engine.providers.get("krea")
+    if krea is None:
+        return {"styles": []}
+    return {"styles": krea.list_styles()}
+
+
+@router.delete("/styles/{style_id}")
+def delete_style(style_id: str) -> Dict[str, Any]:
+    engine = _ensure_engine()
+    krea = engine.providers.get("krea")
+    if krea is None:
+        raise HTTPException(status_code=404, detail="Krea provider not configured")
+    krea.delete_style(style_id)
+    return {"ok": True}
+
+
+@router.post("/styles/{style_id}/share")
+def share_style(style_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    engine = _ensure_engine()
+    krea = engine.providers.get("krea")
+    if krea is None:
+        raise HTTPException(status_code=404, detail="Krea provider not configured")
+    shared = bool(body.get("shared"))
+    return krea.share_style_workspace(style_id, shared)
+
+
 @router.delete("/jobs/{job_id}")
 def delete_job(job_id: str) -> Dict[str, Any]:
     engine = _ensure_engine()

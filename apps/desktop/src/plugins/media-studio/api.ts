@@ -302,6 +302,23 @@ export function setJobFavorite(id: string, favorite: boolean): Promise<{ favorit
   return call(`/jobs/${id}/favorite`, { body: { favorite }, method: 'POST' })
 }
 
+// ── Krea styles (LoRAs) ────────────────────────────────────────────────────
+
+export interface KreaStyle {
+  id: string
+  name: string
+  /** When the gateway is trained against flux_dev, this is what polls report. */
+  status?: string
+}
+
+export function listKreaStyles(): Promise<{ styles: KreaStyle[] }> {
+  return call('/styles', { method: 'GET' })
+}
+
+export function trainKreaStyle(body: { max_train_steps?: number; name: string; urls: string[] }): Promise<Record<string, unknown>> {
+  return call('/styles/train', { body, method: 'POST' })
+}
+
 export function deleteJob(id: string): Promise<{ ok: boolean }> {
   return call(`/jobs/${id}`, { method: 'DELETE' })
 }

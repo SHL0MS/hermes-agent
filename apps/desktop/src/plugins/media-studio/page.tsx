@@ -81,6 +81,7 @@ import { MiniAudioPlayer } from './MiniAudioPlayer'
 import { MixBar } from './MixBar'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
 import { type CoverDraft, CoverPanel, LyricsEditorTools } from './MusicActions'
+import { StylesPanel } from './StylesPanel'
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -331,6 +332,8 @@ const CreatePanel: FC<{
   // Batch count: preset 1/2/4 or a free-typed custom N (fanned out server-side).
   const [countChoice, setCountChoice] = useState<string>('1')
   const [customCount, setCustomCount] = useState('8')
+  // LoRA styles picked for the current submit (Krea 2).
+  const [pickedStyles, setPickedStyles] = useState<Array<{ id: string; strength: number }>>([])
   // Drag-over highlight for the panel-wide start-image drop zone.
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -529,6 +532,10 @@ const CreatePanel: FC<{
       Object.assign(params, musicBriefParams(state))
     }
 
+    if (pickedStyles.length > 0 && 'styles' in (model?.supports ?? {})) {
+      params.styles = pickedStyles
+    }
+
     submit.mutate({ count, modality: model.modality, model: model.id, params, provider: provider.name })
   }
 
@@ -705,6 +712,10 @@ const CreatePanel: FC<{
           placeholder={k.negativePrompt}
           value={state.negativePrompt}
         />
+      )}
+
+      {model?.supports?.styles && (
+        <StylesPanel onChange={setPickedStyles} styles={pickedStyles} />
       )}
 
       {/* Music brief: shown only for audio-modality models (MiniMax). The

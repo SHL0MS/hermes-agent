@@ -56,7 +56,13 @@ _DATA_URI_MIME = {
     ".webp": "image/webp",
     ".gif": "image/gif",
 }
-_MAX_INPUT_IMAGE_BYTES = 12 * 1024 * 1024
+# The managed fal gateway is Vercel-hosted: the platform rejects request
+# bodies over ~4.5MB before gateway code ever runs (FUNCTION_PAYLOAD_TOO_LARGE).
+# Data URIs are base64 (x4/3 of the binary) and ride inside a JSON body with
+# prompt/params, so the per-image BINARY budget is 3MB → ~4MB base64, leaving
+# headroom under the 4.5MB platform limit. Multi-reference submits split the
+# same total budget across all images (see _normalize_image_inputs).
+_MAX_INPUT_IMAGE_BYTES = 3 * 1024 * 1024
 
 
 def _fit_image_for_wire(path, cap: int) -> tuple:
@@ -114,16 +120,21 @@ def _fit_image_for_wire(path, cap: int) -> tuple:
                 return buf.getvalue(), ("image/png" if fmt == "PNG" else "image/jpeg")
 
     raise MediaProviderError(
-        f"Input image can't be fit under {cap // (1024 * 1024)}MB even at 1536px — use a smaller source"
+        f"Input image can't be compressed under {cap // 1024}KB even at 1536px — "
+        "the managed gateway's request limit is ~4.5MB, so use a smaller source image"
     )
 
 
-def normalize_image_input(value: Optional[str]) -> Optional[str]:
+def normalize_image_input(value: Optional[str], cap: Optional[int] = None) -> Optional[str]:
     """Accept http(s)/data URLs as-is; convert a LOCAL FILE PATH (the library
     chaining case) to a base64 data URI both fal and Krea accept. Oversized
-    files are transparently re-encoded for the wire (original untouched)."""
+    files are transparently re-encoded for the wire (original untouched).
+    `cap` is the per-image BINARY budget; multi-reference callers pass a
+    split budget so the whole request body stays under the gateway limit."""
     if not value:
         return None
+    if cap is None:
+        cap = _MAX_INPUT_IMAGE_BYTES
     value = str(value).strip()
     if value.startswith(("http://", "https://", "data:")):
         return value
@@ -137,8 +148,8 @@ def normalize_image_input(value: Optional[str]) -> Optional[str]:
     if mime is None:
         raise MediaProviderError(f"Unsupported input image type: {path.suffix}")
     data = path.read_bytes()
-    if len(data) > _MAX_INPUT_IMAGE_BYTES:
-        data, mime = _fit_image_for_wire(path, _MAX_INPUT_IMAGE_BYTES)
+    if len(data) > cap:
+        data, mime = _fit_image_for_wire(path, cap)
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
@@ -146,9 +157,15 @@ def _normalize_image_inputs(value: Any, model: Dict[str, Any]) -> List[str]:
     """Normalize one-or-many reference images. The UI sends a list when the
     model declares `max_images` > 1 (multi-reference edits — NBP composes up
     to 8); a plain string stays the single-image path. Order is preserved
-    (reference order matters to composition models)."""
+    (reference order matters to composition models). The per-image cap is the
+    single-image budget split across the references, so the summed base64 of
+    an N-image submit stays under the managed gateway's ~4.5MB body limit."""
     raw = value if isinstance(value, (list, tuple)) else [value]
-    urls = [u for u in (normalize_image_input(v) for v in raw if v) if u]
+    present = [v for v in raw if v]
+    if not present:
+        return []
+    per_image = max(1, _MAX_INPUT_IMAGE_BYTES // len(present))
+    urls = [u for u in (normalize_image_input(v, per_image) for v in present) if u]
     cap = int(model.get("max_images") or 1)
     if len(urls) > cap:
         raise MediaProviderError(
@@ -1001,9 +1018,9 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "fast",
         "path": "/generate/image/krea/krea-2/medium",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True},
+        "supports": {"aspect_ratio": True, "seed": True, "styles": True, "moodboards": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Krea 2 mid-size. Portal credits for subscribers.",
+        "note": "Krea 2 mid-size. Portal credits for subscribers. Supports styles (LoRAs) and moodboards.",
     },
     {
         "id": "krea/krea-2/large",
@@ -1012,9 +1029,9 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "quality",
         "path": "/generate/image/krea/krea-2/large",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True},
+        "supports": {"aspect_ratio": True, "seed": True, "styles": True, "moodboards": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Krea's flagship for expressive photorealism. Portal credits.",
+        "note": "Krea's flagship for expressive photorealism. Portal credits. Supports styles (LoRAs) and moodboards.",
     },
     {
         "id": "google/nano-banana-pro",
@@ -1202,12 +1219,113 @@ class KreaAdapter:
                 body["start_image"] = start_image
         if supports.get("seed") and params.get("seed") is not None:
             body["seed"] = int(params["seed"])
+
+        # Styles (trained LoRAs) + moodboards ride the Krea 2 models. Style
+        # ids get a portal-scoped prefix so no caller can reference another
+        # user's style on the shared key; strengths are validated [0..2] for
+        # styles, [-0.5..1.5] for moodboards.
+        if modality == "image":
+            styles_raw = params.get("styles")
+            if styles_raw and supports.get("styles"):
+                styles = []
+                if isinstance(styles_raw, list):
+                    for item in styles_raw:
+                        if isinstance(item, dict) and item.get("id"):
+                            strength = item.get("strength")
+                            try:
+                                strength = float(strength) if strength is not None else 0.6
+                            except (TypeError, ValueError):
+                                continue
+                            if 0 <= strength <= 2:
+                                styles.append({"id": str(item["id"]).strip(), "strength": strength})
+                if styles:
+                    body["styles"] = styles
+            moodboards_raw = params.get("moodboards")
+            if moodboards_raw and supports.get("moodboards"):
+                mobj = None
+                if isinstance(moodboards_raw, list) and moodboards_raw:
+                    m = moodboards_raw[0]
+                    if isinstance(m, dict) and m.get("id"):
+                        strength = m.get("strength")
+                        try:
+                            strength = float(strength) if strength is not None else 0.35
+                        except (TypeError, ValueError):
+                            strength = 0.35
+                        strength = min(1.5, max(-0.5, strength))
+                        mobj = [{"id": str(m["id"]).strip(), "strength": strength}]
+                if mobj:
+                    body["moodboards"] = mobj
         base, bearer, via = self._route(model)
         data = self._request("POST", model["path"], body, base=base, bearer=bearer)
         job_id = data.get("job_id")
         if not job_id:
             raise MediaProviderError(f"Krea: submit returned no job_id: {data}")
         return ProviderJobRef(ref=json.dumps({"id": str(job_id), "via": via}))
+
+    # -- LoRA training (portal via managed gateway) --------------------------
+
+    def train_style(self, name: str, urls: List[str], max_train_steps: int = 500) -> Dict[str, Any]:
+        """Start LoRA training (portal-scoped style, one /styles/train call).
+
+        Returns the parsed upstream response (job id + style prefix)."""
+        key = self._token()
+        if not key:
+            raise MediaProviderError("Krea LoRA training needs KREA_API_KEY (training is not available on the managed gateway path yet)")
+        gateway = self._managed_gateway()
+        base, token = (
+            (gateway.gateway_origin.rstrip("/"), gateway.nous_user_token)
+            if gateway is not None
+            else (_KREA_BASE, key)
+        )
+        data = self._request("POST", "/styles/train", {
+            "name": name,
+            "urls": urls,
+            "model": "flux_dev",
+            "type": "Style",
+            "max_train_steps": max_train_steps,
+        }, base=base, bearer=token)
+        return data
+
+    def list_styles(self) -> List[Dict[str, Any]]:
+        """GET /styles — portal-scoped styles for the current caller's key."""
+        key = self._token()
+        if not key:
+            return []
+        gateway = self._managed_gateway()
+        base, token = (
+            (gateway.gateway_origin.rstrip("/"), gateway.nous_user_token)
+            if gateway is not None
+            else (_KREA_BASE, key)
+        )
+        data = self._request("GET", "/styles", base=base, bearer=token)
+        styles = data.get("styles") or data if isinstance(data, list) else []
+        return styles if isinstance(styles, list) else []
+
+    def delete_style(self, style_id: str) -> None:
+        key = self._token()
+        if not key:
+            return
+        gateway = self._managed_gateway()
+        base, token = (
+            (gateway.gateway_origin.rstrip("/"), gateway.nous_user_token)
+            if gateway is not None
+            else (_KREA_BASE, key)
+        )
+        self._request("DELETE", f"/styles/{style_id}", base=base, bearer=token)
+
+    def share_style_workspace(self, style_id: str, shared: bool) -> Dict[str, Any]:
+        """POST /styles/{id}/share/workspace — gateway normalizes the body so
+        only the caller's own styles can be toggled."""
+        key = self._token()
+        if not key:
+            raise MediaProviderError("Krea LoRA share needs KREA_API_KEY")
+        gateway = self._managed_gateway()
+        base, token = (
+            (gateway.gateway_origin.rstrip("/"), gateway.nous_user_token)
+            if gateway is not None
+            else (_KREA_BASE, key)
+        )
+        return self._request("POST", f"/styles/{style_id}/share/workspace", {"shared": shared}, base=base, bearer=token)
 
     def _parse_ref(self, ref: ProviderJobRef) -> tuple:
         """Return (job_id, base, bearer). Legacy refs are plain job-id strings

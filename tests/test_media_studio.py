@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-DASHBOARD = REPO / "plugins" / "media-studio" / "dashboard"
+DASHBOARD = REPO / "dashboard"
 
 
 def _load(name: str):
@@ -712,16 +712,18 @@ def test_provider_catalog_key_on_file_tracks_env(api_client, monkeypatch):
 
 
 def test_oversized_input_image_reencodes_for_wire_without_touching_disk(tmp_path):
-    """A local input over the 12MB data-URI cap is re-encoded in memory (JPEG,
+    """A local input over the 3MB binary cap is re-encoded in memory (JPEG,
     stepping resolution only if needed); the on-disk original is byte-identical
-    afterward and the data URI fits the cap."""
+    afterward, and the FULL data URI (base64 of the binary + prefix) stays
+    under the managed gateway's ~4.5MB request-body limit — the real
+    constraint behind the flux-3 FUNCTION_PAYLOAD_TOO_LARGE failures."""
     import base64
 
     from PIL import Image
 
     providers_mod = _load("providers")
 
-    # Random RGB noise defeats PNG compression → comfortably >12MB on disk.
+    # Random RGB noise defeats PNG compression → comfortably >3MB on disk.
     import random
 
     random.seed(7)
@@ -738,10 +740,50 @@ def test_oversized_input_image_reencodes_for_wire_without_touching_disk(tmp_path
     assert uri.startswith("data:image/jpeg;base64,")
     payload = base64.b64decode(uri.split(",", 1)[1])
     assert len(payload) <= providers_mod._MAX_INPUT_IMAGE_BYTES
-    # Same pixels, still a decodable image, original untouched.
+    # The request-level constraint: the whole URI string must fit the
+    # Vercel-hosted gateway's body limit (4.5MB) with room for JSON overhead.
+    assert len(uri) <= 4_500_000
+    # Original untouched on disk; the wire copy is still a decodable image
+    # (noise can't fit at full res under 3MB, so the ladder steps down).
     assert src.read_bytes() == before
     reloaded = Image.open(__import__("io").BytesIO(payload))
-    assert reloaded.size == (2600, 2600)
+    assert max(reloaded.size) <= 2600
+    reloaded.load()
+
+
+def test_multiple_oversized_references_share_the_request_budget(tmp_path):
+    """Multi-reference submits split the per-image budget across images, so
+    the summed base64 of an N-image payload still fits the gateway limit
+    (a 12MB-era per-image cap would have let 2+ references blow the body)."""
+    import base64
+
+    from PIL import Image
+
+    import random
+
+    providers_mod = _load("providers")
+
+    # 1024px noise: ~3.1MB on disk (over any 2-way split of the 3MB budget,
+    # forcing the re-encode ladder) but ~1MB as a q92 JPEG, so it fits.
+    random.seed(11)
+    srcs = []
+    for i in range(2):
+        img = Image.frombytes(
+            "RGB", (1024, 1024), bytes(random.getrandbits(8) for _ in range(1024 * 1024 * 3))
+        )
+        p = tmp_path / f"noise{i}.png"
+        img.save(p, "PNG")
+        srcs.append(str(p))
+    model = {"id": "fal-ai/nano-banana-pro", "display": "NBP", "max_images": 8}
+
+    uris = providers_mod._normalize_image_inputs(srcs, model)
+
+    assert len(uris) == 2
+    total = sum(len(u) for u in uris)
+    assert total <= 4_500_000
+    # Each is still a real image of the right mime (re-encoded, since both
+    # are over their split budget).
+    assert all(u.startswith("data:image/jpeg;base64,") for u in uris)
 
 
 def test_small_input_image_passes_through_unrecoded(tmp_path):
@@ -815,3 +857,46 @@ def test_multi_image_edit_routes_ordered_array(monkeypatch, tmp_path):
     too_many = paths * 3  # 9 > max_images=8
     with pytest.raises(providers_mod.MediaProviderError, match="at most 8"):
         adapter._image_payload(model, {"prompt": "x", "image_url": too_many})
+
+
+def test_krea_styles_and_moodboard_params():
+    """Krea 2 medium/large accept styles[] and moodboards[]; strengths bound."""
+    from dashboard.providers import KreaAdapter
+
+    captured = {}
+    adapter = KreaAdapter()
+    adapter._route = lambda m: ("http://x\n", "t", "direct")
+    adapter._request = lambda *a, **k: (
+        captured.update({"body": a[2]}) or {"job_id": "j1"}
+    )
+
+    class _StubModel(dict):
+        def _model(self, _id):
+            return {
+                "id": "krea/krea-2/medium",
+                "path": "/generate/image/krea/krea-2/medium",
+                "supports": {"aspect_ratio": True, "seed": True, "styles": True, "moodboards": True},
+            }
+
+    adapter._model = _StubModel()._model
+    adapter.is_available = lambda: True
+    adapter.availability_hint = lambda: "ready"
+
+    ref = adapter.submit(
+        "krea/krea-2/medium",
+        "image",
+        {
+            "prompt": "poster",
+            "styles": [{"id": "x", "strength": 0.7}, {"id": "no-strength"}],
+            "moodboards": [{"id": "m1", "strength": 99}],  # clamped to 1.5
+        },
+    )
+    assert captured["body"]["styles"] == [{"id": "x", "strength": 0.7}, {"id": "no-strength", "strength": 0.6}]
+    assert captured["body"]["moodboards"] == [{"id": "m1", "strength": 1.5}]
+    assert captured["body"]["resolution"] == "1K"
+
+    # Without styles/moodboards the keys stay out entirely (no tier drift
+    # paid for by the {}) — Krea's pricing is per-tier, absence = base.
+    captured.clear()
+    adapter.submit("krea/krea-2/medium", "image", {"prompt": "p"})
+    assert "styles" not in captured["body"] and "moodboards" not in captured["body"]

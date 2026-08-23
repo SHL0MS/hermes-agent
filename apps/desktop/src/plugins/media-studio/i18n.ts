@@ -46,6 +46,12 @@ type StudioMessages = {
   unfavorite: string
   showFavorites: string
   showAll: string
+  styles: string
+  styleStrengthLabel: string
+  trainStyle: string
+  trainInProgress: string
+  trainStyleNamePlaceholder: string
+  trainStyleUrlsPlaceholder: string
   revealFile: string
   copyPath: string
   copiedPath: string
@@ -191,6 +197,12 @@ const en: StudioMessages = {
   unfavorite: 'Unfavorite',
   showFavorites: 'Show favorites only',
   showAll: 'Show all',
+  styles: 'Styles',
+  styleStrengthLabel: 'Style strength',
+  trainStyle: 'Train a LoRA style',
+  trainInProgress: 'Training…',
+  trainStyleNamePlaceholder: 'Style name',
+  trainStyleUrlsPlaceholder: 'One training-image URL per line (upload via /assets)',
   revealFile: 'Reveal in Finder',
   copyPath: 'Copy path',
   copiedPath: 'Path copied',
@@ -334,6 +346,12 @@ const ja: StudioMessages = {
   unfavorite: 'お気に入り解除',
   showFavorites: 'お気に入りのみ表示',
   showAll: 'すべて表示',
+  styles: 'スタイル',
+  styleStrengthLabel: 'スタイル強度',
+  trainStyle: 'LoRAモデルを学習',
+  trainInProgress: '学習中…',
+  trainStyleNamePlaceholder: 'スタイル名',
+  trainStyleUrlsPlaceholder: 'トレーニング画像URLを1行ずつ貼り付け（/assetsでアップロード）',
   revealFile: 'Finderで表示',
   copyPath: 'パスをコピー',
   copiedPath: 'パスをコピーしました',
@@ -477,6 +495,12 @@ const zh: StudioMessages = {
   unfavorite: '取消收藏',
   showFavorites: '仅显示收藏',
   showAll: '显示全部',
+  styles: '风格',
+  styleStrengthLabel: '风格强度',
+  trainStyle: '训练 LoRA 风格',
+  trainInProgress: '训练中…',
+  trainStyleNamePlaceholder: '风格名称',
+  trainStyleUrlsPlaceholder: '每行一张训练图 URL（通过 /assets 上传）',
   revealFile: '在 Finder 中显示',
   copyPath: '复制路径',
   copiedPath: '已复制路径',
@@ -620,6 +644,12 @@ const zhHant: StudioMessages = {
   unfavorite: '取消收藏',
   showFavorites: '僅顯示收藏',
   showAll: '顯示全部',
+  styles: '風格',
+  styleStrengthLabel: '風格強度',
+  trainStyle: '訓練 LoRA 風格',
+  trainInProgress: '訓練中…',
+  trainStyleNamePlaceholder: '風格名稱',
+  trainStyleUrlsPlaceholder: '每行一張訓練圖 URL（透過 /assets 上傳）',
   revealFile: '在 Finder 中顯示',
   copyPath: '複製路徑',
   copiedPath: '已複製路徑',
