@@ -37,7 +37,7 @@ export function StylesPanel({ styles, onChange }: Props) {
   useEffect(() => { void refresh() }, [refresh])
 
   const add = (id: string) => {
-    if (!id || styles.some(s => s.id === id)) return
+    if (!id || styles.some(s => s.id === id)) {return}
     onChange([...styles, { id, strength: 0.6 }])
   }
 
@@ -47,11 +47,16 @@ export function StylesPanel({ styles, onChange }: Props) {
     onChange(styles.map(s => s.id === id ? { ...s, strength } : s))
 
   const submitTrain = async () => {
-    if (!trainingName.trim()) return
+    if (!trainingName.trim()) {return}
     const urls = trainingUrls.split('\n').map(u => u.trim()).filter(Boolean)
-    if (urls.length === 0) { setTrainError('At least one training image URL'); return }
+
+    if (urls.length === 0) { setTrainError('At least one training image URL');
+
+ return }
+
     setTrainError('')
     setTraining(true)
+
     try {
       await trainKreaStyle({ name: trainingName.trim(), urls })
       setTrainingName('')
@@ -74,6 +79,7 @@ export function StylesPanel({ styles, onChange }: Props) {
           <div className="flex flex-wrap gap-1.5">
             {choices.map(c => {
               const active = styles.some(s => s.id === c.id)
+
               return (
                 <button
                   className={`rounded-lg border px-2.5 py-1 text-[12px] transition-colors ${active ? 'border-(--dt-primary) bg-(--ctx-primary-subtle) text-foreground' : 'border-(--ui-stroke-secondary) text-(--ui-text-secondary) hover:border-(--ui-stroke-primary)'}`}
@@ -90,6 +96,7 @@ export function StylesPanel({ styles, onChange }: Props) {
             <div className="flex flex-col gap-1.5">
               {styles.map(s => {
                 const name = choices.find(c => c.id === s.id)?.name ?? s.id
+
                 return (
                   <div className="flex items-center gap-2" key={s.id}>
                     <span className="min-w-0 flex-1 truncate text-[12px]">{name}</span>

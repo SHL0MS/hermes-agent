@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-DASHBOARD = REPO / "dashboard"
+DASHBOARD = REPO / "plugins" / "media-studio" / "dashboard"
 
 
 def _load(name: str):
@@ -861,11 +861,9 @@ def test_multi_image_edit_routes_ordered_array(monkeypatch, tmp_path):
 
 def test_krea_styles_and_moodboard_params():
     """Krea 2 medium/large accept styles[] and moodboards[]; strengths bound."""
-    from dashboard.providers import KreaAdapter
-
     captured = {}
-    adapter = KreaAdapter()
-    adapter._route = lambda m: ("http://x\n", "t", "direct")
+    adapter = _load("providers").KreaAdapter()
+    adapter._route = lambda m: ("https://api.krea.ai", "t", "direct")
     adapter._request = lambda *a, **k: (
         captured.update({"body": a[2]}) or {"job_id": "j1"}
     )
