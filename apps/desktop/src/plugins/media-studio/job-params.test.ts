@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MediaJob } from './api'
-import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, reuseStateFromJob, sortJobs } from './job-params'
+import { aspectAppliesToSubmit, clampCount, jobParamEntries, jobPrompt, musicBriefParams, reuseStateFromJob, sortJobs } from './job-params'
 
 function job(params: Record<string, unknown>): MediaJob {
   return {
@@ -276,5 +276,18 @@ describe('sortJobs', () => {
 
   it('model sorts by model id with newest-first ties', () => {
     expect(sortJobs(rows, 'model').map(j => j.id)).toEqual(['d', 'c', 'b', 'a'])
+  })
+})
+
+describe('aspectAppliesToSubmit', () => {
+  it('is true without a start image, or when the model honors i2v aspect', () => {
+    expect(aspectAppliesToSubmit({}, 0)).toBe(true)
+    expect(aspectAppliesToSubmit(null, 0)).toBe(true)
+    expect(aspectAppliesToSubmit({ i2v_aspect: true }, 1)).toBe(true)
+  })
+
+  it('is false when an i2v model auto-frames from the start image', () => {
+    expect(aspectAppliesToSubmit({}, 1)).toBe(false)
+    expect(aspectAppliesToSubmit(undefined, 2)).toBe(false)
   })
 })

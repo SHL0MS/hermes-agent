@@ -164,6 +164,18 @@ export function sortJobs(jobs: readonly MediaJob[], mode: SortMode): MediaJob[] 
   return [...jobs].sort(compare[mode])
 }
 
+/** Does aspect_ratio actually reach the vendor for this submit? Image-to-video
+ *  on some endpoints (Seedance 2.5, MiniMax H3) is "auto"-framed by the start
+ *  image and ignores the picker — offering the control (and storing the param)
+ *  then lies in the chips. True when there's no start image, or the model
+ *  declares i2v_aspect. */
+export function aspectAppliesToSubmit(
+  model: { i2v_aspect?: boolean } | null | undefined,
+  startImageCount: number
+): boolean {
+  return startImageCount === 0 || Boolean(model?.i2v_aspect)
+}
+
 /** Clamp a custom batch-count field to the API's accepted range. */
 export function clampCount(raw: string, max = 50): number {
   const parsed = Number.parseInt(raw, 10)

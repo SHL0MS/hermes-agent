@@ -898,3 +898,30 @@ def test_krea_styles_and_moodboard_params():
     captured.clear()
     adapter.submit("krea/krea-2/medium", "image", {"prompt": "p"})
     assert "styles" not in captured["body"] and "moodboards" not in captured["body"]
+
+
+def test_seedance_i2v_drops_aspect_t2v_keeps_it():
+    """Seedance 2.5 i2v is auto-framed by the start image (fal ignores
+    aspect_ratio on that endpoint) — the payload must not send it; t2v sends
+    it. Contract mirrors the in-tree video_gen catalog's image_drop_keys."""
+    providers_mod = _load("providers")
+    adapter = providers_mod.FalAdapter()
+    model = adapter._model("seedance-2.5")
+
+    from PIL import Image
+
+    import io
+    import base64
+
+    img = Image.new("RGB", (16, 16), (10, 20, 30))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    endpoint, payload = adapter._video_payload(model, {"prompt": "x", "aspect_ratio": "1:1", "image_url": data_uri})
+    assert endpoint == "bytedance/seedance-2.5/image-to-video"
+    assert "aspect_ratio" not in payload
+
+    endpoint2, payload2 = adapter._video_payload(model, {"prompt": "x", "aspect_ratio": "1:1"})
+    assert endpoint2 == "bytedance/seedance-2.5/text-to-video"
+    assert payload2["aspect_ratio"] == "1:1"

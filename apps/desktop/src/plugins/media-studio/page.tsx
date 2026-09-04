@@ -76,7 +76,7 @@ import {
 } from './audio-select'
 import { AudioPanel } from './AudioPanel'
 import { useStudio } from './i18n'
-import { clampCount, jobParamEntries, jobPrompt, musicBriefParams, type ReuseState, reuseStateFromJob, SORT_MODES, sortJobs, type SortMode } from './job-params'
+import { aspectAppliesToSubmit, clampCount, jobParamEntries, jobPrompt, musicBriefParams, reuseStateFromJob, type ReuseState, SORT_MODES, type SortMode, sortJobs } from './job-params'
 import { MiniAudioPlayer } from './MiniAudioPlayer'
 import { MixBar } from './MixBar'
 import { type ModalityFilter, reconcileSelection, visibleModels } from './model-choices'
@@ -420,6 +420,9 @@ const CreatePanel: FC<{
   const aspectChoices = model?.aspect_ratios ?? ASPECT_DEFAULTS
   const modality = model?.modality ?? 'image'
   const acceptsImage = modelAcceptsImage(model)
+  // Seedance-2.5-style i2v is auto-framed by the start image: the picker is
+  // disabled with a note and the param never rides the submit (no lying chip).
+  const aspectApplies = aspectAppliesToSubmit(model, startImages.length)
   // Reference-image slots for the active model (NBP composes up to 8).
   const maxImages = acceptsImage ? Math.max(1, model?.max_images ?? 1) : 0
   const slotsLeft = Math.max(0, maxImages - startImages.length)
@@ -496,7 +499,7 @@ const CreatePanel: FC<{
 
     const params: Record<string, unknown> = { prompt: state.prompt.trim() }
 
-    if (supports.aspect_ratio) {
+    if (supports.aspect_ratio && aspectApplies) {
       params.aspect_ratio = state.aspectRatio
     }
 
@@ -801,11 +804,17 @@ const CreatePanel: FC<{
         {supports.aspect_ratio && (
           <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
             {k.aspectRatio}
-            <SegmentedControl
-              onChange={id => patch({ aspectRatio: id })}
-              options={aspectChoices.map(ratio => ({ id: ratio, label: ratio }))}
-              value={state.aspectRatio}
-            />
+            {aspectApplies ? (
+              <SegmentedControl
+                onChange={(id: string) => patch({ aspectRatio: id })}
+                options={aspectChoices.map(ratio => ({ id: ratio, label: ratio }))}
+                value={state.aspectRatio}
+              />
+            ) : (
+              <span className="flex h-7 items-center rounded-md border border-dashed border-(--ui-stroke-secondary) px-2 text-[0.6875rem] text-(--ui-text-quaternary)">
+                {k.aspectFollowsImage}
+              </span>
+            )}
           </label>
         )}
         {supports.resolution && (model?.resolutions?.length ?? 0) > 0 && (

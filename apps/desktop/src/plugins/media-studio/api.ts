@@ -19,6 +19,9 @@ export interface ModelInfo {
   /** Action-launched rows (e.g. the cover renderer) — valid submit targets,
    *  hidden from the create panel's picker. */
   hidden?: boolean
+  /** Video-only: the i2v endpoint honors aspect_ratio (Seedance 2.5-style
+   *  endpoints auto-frame from the start image and drop it). */
+  i2v_aspect?: boolean
   supports: Record<string, boolean> & {
     /** MiniMax music brief fields; presence = the create panel shows them. */
     lyrics?: boolean
