@@ -442,9 +442,9 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
             "image_url": True,
         },
         "aspect_ratios": ["16:9", "9:16"],
-        "resolutions": ["720p", "1080p", "4k"],
+        "resolutions": ["720p", "1080p"],
         "durations": [4, 6, 8],
-        "note": "Best overall quality; native audio; up to 4K.",
+        "note": "Best overall quality; native audio. 720p/1080p (the gateway does not accept 4k for this endpoint).",
     },
     {
         "id": "flux-3-video",
