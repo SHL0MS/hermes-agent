@@ -212,12 +212,10 @@ sections. Blank lines inside fenced code blocks stay in the same message. Set
 `PHOTON_MARKDOWN=false` to disable Markdown and rich-link rendering; section
 splitting still applies.
 
-Hermes also treats research verbs as research: asking it to *find*, *check*, or
-*compare* something means it reports back rather than booking, buying, cancelling,
-or messaging on your behalf. When it does complete an action, it closes with a
-short receipt naming the concrete result (confirmation number, final time, amount,
-who it contacted). If it gets stuck on a login code or a CAPTCHA, it asks for that
-one thing in the thread and resumes the rest of the task.
+When Hermes completes an action, the last bubble is a receipt naming the concrete
+result (confirmation number, final time, amount, who it contacted). If it gets
+stuck on a login code or a CAPTCHA, it asks for that one thing in the thread and
+keeps the task ready to resume.
 
 ## Approving a flagged command
 

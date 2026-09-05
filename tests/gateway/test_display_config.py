@@ -177,6 +177,16 @@ class TestPlatformDefaults:
         assert resolve_display_setting({}, "photon", "tool_progress") == "off"
         assert resolve_display_setting({}, "photon", "long_running_notifications") is False
 
+    def test_buffer_only_commentary_is_a_photon_opt_in_not_a_class_default(self):
+        """Relaxing the non-editing streaming guard for photon must not widen the interim-message
+        surface to every other non-editing adapter: those stay tier-low, so the consumer is
+        never built for them by default. qqbot is the one that would otherwise fall through
+        to the verbose global default."""
+        from gateway.display_config import resolve_display_setting
+
+        for platform in ("qqbot", "signal", "bluebubbles", "weixin", "wecom_callback", "dingtalk"):
+            assert resolve_display_setting({}, platform, "interim_assistant_messages") is False, platform
+
 
 def test_non_editing_interim_consumer_is_buffer_only() -> None:
     from gateway.config import StreamingConfig

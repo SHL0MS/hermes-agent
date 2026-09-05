@@ -70,6 +70,9 @@ _PLATFORM_DEFAULTS: dict[str, dict[str, Any]] = {
     "wecom": {**_TIER_LOW, "streaming": True},
     "wecom_callback": _TIER_LOW,
     "dingtalk": _TIER_LOW,
+    # Non-editing (no edit_message): every other adapter in this class is tier-low. Listing it keeps
+    # the buffer-only commentary consumer (photon opt-in above) from reaching it by default.
+    "qqbot": _TIER_LOW,
     "email": _TIER_MINIMAL,
     "sms": _TIER_MINIMAL,
     "webhook": _TIER_MINIMAL,
