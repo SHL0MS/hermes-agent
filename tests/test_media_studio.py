@@ -925,3 +925,95 @@ def test_seedance_i2v_drops_aspect_t2v_keeps_it():
     endpoint2, payload2 = adapter._video_payload(model, {"prompt": "x", "aspect_ratio": "1:1"})
     assert endpoint2 == "bytedance/seedance-2.5/text-to-video"
     assert payload2["aspect_ratio"] == "1:1"
+
+
+def test_krea_submit_body_stays_within_gateway_allowlist():
+    """Contract vs the LIVE managed gateway: its strict field allowlist is
+    prompt/aspect_ratio/resolution/creativity/seed/image_style_references.
+    The studio must not send anything else (styles/moodboards are gateway-
+    blocked until tool-gateway PR #53 merges — catalog flags are off)."""
+    providers_mod = _load("providers")
+    adapter = providers_mod.KreaAdapter()
+    adapter._route = lambda m: ("https://gw", "t", "managed")
+    captured = {}
+    adapter._request = lambda *a, **k: (captured.update({"body": a[2]}) or {"job_id": "j1"})
+
+    adapter.submit(
+        "krea/krea-2/medium",
+        "image",
+        {
+            "prompt": "poster",
+            "aspect_ratio": "1:1",
+            "seed": 7,
+            "styles": [{"id": "x", "strength": 0.5}],  # must be dropped (flag off)
+            "moodboards": [{"id": "m", "strength": 0.4}],  # must be dropped
+        },
+    )
+    assert set(captured["body"]) <= {
+        "prompt", "aspect_ratio", "resolution", "creativity", "seed", "image_style_references"
+    }
+    assert "styles" not in captured["body"] and "moodboards" not in captured["body"]
+    # A missing local file fails the submit loudly (same contract as start
+    # images) — never a silent style drop the user didn't notice.
+    with pytest.raises(providers_mod.MediaProviderError, match="Style reference not found"):
+        adapter.submit(
+            "krea/krea-2/medium", "image",
+            {"prompt": "p", "image_style_references": ["/nonexistent/a.png"]},
+        )
+
+
+def test_krea_style_refs_local_file_becomes_small_data_uri(tmp_path):
+    """Local library images ride as data URIs (Krea's documented input form),
+    re-encoded under the style-ref budget; URLs pass through; 10 max."""
+    from PIL import Image
+
+    providers_mod = _load("providers")
+    adapter = providers_mod.KreaAdapter()
+    adapter._route = lambda m: ("https://gw", "t", "managed")
+    captured = {}
+    adapter._request = lambda *a, **k: (captured.update({"body": a[2]}) or {"job_id": "j1"})
+
+    src = tmp_path / "style.png"
+    Image.new("RGB", (2048, 2048), (90, 30, 160)).save(src, "PNG")
+    url = "https://krea.ai/assets/some.png"
+
+    adapter.submit(
+        "krea/krea-2/medium",
+        "image",
+        {"prompt": "p", "image_style_references": [str(src), url]},
+    )
+    refs = captured["body"]["image_style_references"]
+    assert len(refs) == 2
+    assert refs[0]["url"].startswith("data:image/")
+    assert len(refs[0]["url"]) < 600 * 1024  # small enough for 10 to fit the body
+    assert refs[1] == {"url": url, "strength": 0.6}
+
+    with pytest.raises(providers_mod.MediaProviderError, match="at most 10"):
+        adapter.submit(
+            "krea/krea-2/medium", "image",
+            {"prompt": "p", "image_style_references": [str(src)] * 11},
+        )
+
+
+def test_gpt_image_25_rows_match_portal_catalog():
+    """GPT Image 2.5 Flare/Sunburst (portal-live Sep 2026): edits route to the
+    openai/ namespace with multi-reference images; 4:3-variant size presets
+    only (16:9 presets fall below the model's min-pixel requirement)."""
+    providers_mod = _load("providers")
+    adapter = providers_mod.FalAdapter()
+    for variant, tier in (("flare", "fast"), ("sunburst", "quality")):
+        model = adapter._model(f"openai/gpt-image-2.5/{variant}/text-to-image")
+        assert model["tier"] == tier
+        assert model["edit_endpoint"] == f"openai/gpt-image-2.5/{variant}/edit"
+        assert model["max_images"] == 16
+        assert set(model["aspect_ratios"]) == {"1:1", "4:3", "3:4"}
+
+    endpoint, payload = adapter._image_payload(
+        adapter._model("openai/gpt-image-2.5/flare/text-to-image"),
+        {"prompt": "x", "aspect_ratio": "4:3"},
+    )
+    assert endpoint == "openai/gpt-image-2.5/flare/text-to-image"
+    assert payload["image_size"] == "landscape_4_3"
+
+    # GPT Image 2 shares the same 4:3-variant constraint.
+    assert set(adapter._model("fal-ai/gpt-image-2")["aspect_ratios"]) == {"1:1", "4:3", "3:4"}

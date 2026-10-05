@@ -65,14 +65,16 @@ _DATA_URI_MIME = {
 _MAX_INPUT_IMAGE_BYTES = 3 * 1024 * 1024
 
 
-def _fit_image_for_wire(path, cap: int) -> tuple:
+def _fit_image_for_wire(path, cap: int, ladder=None) -> tuple:
     """Re-encode a COPY of an oversized input so it fits the data-URI cap.
 
     The file on disk is never modified — this only shapes the bytes that ride
     the request. Strategy: keep full resolution and try high-quality JPEG
     first (a 2K/4K PNG is usually 3-6x larger than a q92 JPEG of the same
     pixels); step the long edge down only when that still doesn't fit. Alpha
-    sources stay PNG so transparency survives. Returns (bytes, mime).
+    sources stay PNG so transparency survive. Returns (bytes, mime).
+    `ladder` overrides the default long-edge steps (style refs pass a small
+    one — they're guidance, not content).
     """
     import io
 
@@ -96,7 +98,7 @@ def _fit_image_for_wire(path, cap: int) -> tuple:
         else:
             base = img.convert("RGB")
 
-    for long_edge in (None, 4096, 3072, 2048, 1536):
+    for long_edge in (ladder if ladder is not None else (None, 4096, 3072, 2048, 1536)):
         frame = base
         if long_edge is not None and max(base.size) > long_edge:
             scale = long_edge / max(base.size)
@@ -123,6 +125,34 @@ def _fit_image_for_wire(path, cap: int) -> tuple:
         f"Input image can't be compressed under {cap // 1024}KB even at 1536px — "
         "the managed gateway's request limit is ~4.5MB, so use a smaller source image"
     )
+
+
+# Krea style references ride as data URIs (Krea's documented third input form)
+# but are style GUIDANCE, not content — 768px long edge keeps 10 of them inside
+# the gateway's ~4.5MB body budget without visibly changing the styled output.
+_STYLE_REF_MAX_BYTES = 384 * 1024
+_STYLE_REF_LONG_EDGE = 768
+
+
+def _style_ref_data_uri(value: str) -> str:
+    """Local file → small data URI for Krea's image_style_references. URLs and
+    data URIs pass through untouched."""
+    import base64
+    from pathlib import Path as _Path
+
+    value = str(value).strip()
+    if value.startswith(("http://", "https://", "data:")):
+        return value
+    path = _Path(value.removeprefix("file://"))
+    if not path.is_file():
+        raise MediaProviderError(f"Style reference not found: {path}")
+    mime = _DATA_URI_MIME.get(path.suffix.lower())
+    if mime is None:
+        raise MediaProviderError(f"Unsupported style reference type: {path.suffix}")
+    data = path.read_bytes()
+    if len(data) > _STYLE_REF_MAX_BYTES:
+        data, mime = _fit_image_for_wire(path, _STYLE_REF_MAX_BYTES, ladder=(_STYLE_REF_LONG_EDGE, 512, 384))
+    return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
 def normalize_image_input(value: Optional[str], cap: Optional[int] = None) -> Optional[str]:
@@ -267,9 +297,38 @@ FAL_IMAGE_MODELS: List[Dict[str, Any]] = [
         "tier": "quality",
         "resolution_param": "quality",
         "supports": {"aspect_ratio": True, "resolution": True},
-        "aspect_ratios": _PRESET_ASPECTS,
+        "aspect_ratios": ["1:1", "4:3", "3:4"],
         "resolutions": ["auto", "low", "medium", "high"],
         "note": "OpenAI's latest image model. The quality knob is the cost knob.",
+    },
+    # GPT Image 2.5 (portal-live Sep 2026): same 4:3-variant size presets as
+    # GPT Image 2 (the 16:9 presets fall below the min-pixel requirement) and
+    # edits under the openai/ namespace, up to 16 reference images.
+    {
+        "id": "openai/gpt-image-2.5/flare/text-to-image",
+        "display": "GPT Image 2.5 Flare",
+        "modality": "image",
+        "tier": "fast",
+        "resolution_param": "quality",
+        "edit_endpoint": "openai/gpt-image-2.5/flare/edit",
+        "max_images": 16,
+        "supports": {"aspect_ratio": True, "resolution": True, "image_url": True},
+        "aspect_ratios": ["1:1", "4:3", "3:4"],
+        "resolutions": ["auto", "low", "medium", "high"],
+        "note": "Everyday creation, natural lighting and textures. Edits with up to 16 reference images.",
+    },
+    {
+        "id": "openai/gpt-image-2.5/sunburst/text-to-image",
+        "display": "GPT Image 2.5 Sunburst",
+        "modality": "image",
+        "tier": "quality",
+        "resolution_param": "quality",
+        "edit_endpoint": "openai/gpt-image-2.5/sunburst/edit",
+        "max_images": 16,
+        "supports": {"aspect_ratio": True, "resolution": True, "image_url": True},
+        "aspect_ratios": ["1:1", "4:3", "3:4"],
+        "resolutions": ["auto", "low", "medium", "high"],
+        "note": "Precision editing, subject and composition consistency. Edits with up to 16 reference images.",
     },
     {
         "id": "fal-ai/gpt-image-1.5",
@@ -1007,9 +1066,9 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "fast",
         "path": "/generate/image/krea/krea-2/medium-turbo",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True},
+        "supports": {"aspect_ratio": True, "seed": True, "style_references": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Fastest Krea 2. Portal credits for subscribers.",
+        "note": "Fastest Krea 2. Portal credits for subscribers. Style refs (up to 10).",
     },
     {
         "id": "krea/krea-2/medium",
@@ -1018,9 +1077,9 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "fast",
         "path": "/generate/image/krea/krea-2/medium",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True, "styles": True, "moodboards": True},
+        "supports": {"aspect_ratio": True, "seed": True, "style_references": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Krea 2 mid-size. Portal credits for subscribers. Supports styles (LoRAs) and moodboards.",
+        "note": "Krea 2 mid-size. Portal credits for subscribers. Style refs (up to 10).",
     },
     {
         "id": "krea/krea-2/large",
@@ -1029,9 +1088,9 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "quality",
         "path": "/generate/image/krea/krea-2/large",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True, "styles": True, "moodboards": True},
+        "supports": {"aspect_ratio": True, "seed": True, "style_references": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Krea's flagship for expressive photorealism. Portal credits. Supports styles (LoRAs) and moodboards.",
+        "note": "Krea's flagship for expressive photorealism. Portal credits. Style refs (up to 10).",
     },
     {
         "id": "google/nano-banana-pro",
@@ -1220,10 +1279,29 @@ class KreaAdapter:
         if supports.get("seed") and params.get("seed") is not None:
             body["seed"] = int(params["seed"])
 
-        # Styles (trained LoRAs) + moodboards ride the Krea 2 models. Style
-        # ids get a portal-scoped prefix so no caller can reference another
-        # user's style on the shared key; strengths are validated [0..2] for
-        # styles, [-0.5..1.5] for moodboards.
+        # Style references (live on the managed gateway): up to 10 images that
+        # guide the look. Local library files ride as small data URIs (Krea's
+        # documented third input form), URLs pass through; the gateway applies
+        # its own {url, strength} normalization and 0.6 default strength.
+        style_refs_raw = params.get("image_style_references")
+        if modality == "image" and style_refs_raw and supports.get("style_references"):
+            raw_list = style_refs_raw if isinstance(style_refs_raw, list) else [style_refs_raw]
+            refs = []
+            for item in raw_list:
+                if isinstance(item, dict) and item.get("url"):
+                    refs.append({"url": _style_ref_data_uri(str(item["url"])), "strength": 0.6})
+                elif isinstance(item, str) and item.strip():
+                    refs.append({"url": _style_ref_data_uri(item), "strength": 0.6})
+            if len(refs) > 10:
+                raise MediaProviderError("Krea accepts at most 10 style reference images")
+            if refs:
+                body["image_style_references"] = refs
+
+        # Styles (trained LoRAs) + moodboards: DORMANT — the managed gateway
+        # rejects both fields until tool-gateway PR #53 (portal-scoped LoRA
+        # training + tier pricing) merges. The support flags are off in the
+        # catalog, so these blocks never run; they stay so flipping the flags
+        # is the only change needed on merge.
         if modality == "image":
             styles_raw = params.get("styles")
             if styles_raw and supports.get("styles"):
@@ -1371,7 +1449,11 @@ class KreaAdapter:
 
 
 def build_providers() -> Dict[str, Any]:
-    providers: Dict[str, Any] = {a.name: a for a in (FalAdapter(), KreaAdapter())}
+    # Krea first: the portal's image lane (design plan v0.1) — the create
+    # panel pre-selects the first available provider, so subscribers land on
+    # Krea 2 Medium Turbo (the curated cheap default) and fall back to FAL
+    # when Krea is unavailable.
+    providers: Dict[str, Any] = {a.name: a for a in (KreaAdapter(), FalAdapter())}
     try:
         from .providers_minimax import MinimaxMusicAdapter
     except ImportError:  # loaded standalone by the dashboard mounter (no package)

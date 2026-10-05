@@ -21,6 +21,7 @@ export type ParamLabelKey =
   | 'resolution'
   | 'seed'
   | 'startImage'
+  | 'styleRefs'
 
 export interface ParamEntry {
   key: ParamLabelKey
@@ -86,6 +87,14 @@ export function jobParamEntries(job: MediaJob): ParamEntry[] {
 
   if (typeof image === 'string' && image) {
     out.push({ key: 'startImage', value: image.startsWith('data:') ? 'image' : basename(image) })
+  }
+
+  // Style references: a count chip (the refs themselves are long data URIs on
+  // the wire — the library paths they came from aren't stored).
+  const styleRefs = params.image_style_references
+
+  if (Array.isArray(styleRefs) && styleRefs.length > 0) {
+    out.push({ key: 'styleRefs', value: `${styleRefs.length}` })
   }
 
   // Music brief chips — present on MiniMax music rows. Lyrics stay out of the
@@ -199,6 +208,7 @@ export interface ReuseState {
   seed: string
   audio: boolean
   startImages: string[]
+  styleRefs: string[]
   lyrics: string
   genre: string
   mood: string
@@ -221,6 +231,10 @@ export function reuseStateFromJob(job: MediaJob): ReuseState {
   const p = job.params
   const rawImages = Array.isArray(p.image_url) ? p.image_url : [p.image_url]
   const images = rawImages.filter((v): v is string => typeof v === 'string' && v.startsWith('/'))
+  const rawStyleRefs = Array.isArray(p.image_style_references) ? p.image_style_references : []
+  const styleRefs = rawStyleRefs
+    .map((v: unknown) => (typeof v === 'string' ? v : typeof v === 'object' && v !== null && 'url' in v ? String((v as { url: unknown }).url) : ''))
+    .filter((v: string) => v.startsWith('/'))
 
   return {
     provider: job.provider,
@@ -233,6 +247,7 @@ export function reuseStateFromJob(job: MediaJob): ReuseState {
     seed: asStr(p.seed),
     audio: p.audio !== false,
     startImages: images,
+    styleRefs,
     lyrics: asStr(p.lyrics),
     genre: asStr(p.genre),
     mood: asStr(p.mood),

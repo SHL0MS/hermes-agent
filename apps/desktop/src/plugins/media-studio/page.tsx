@@ -299,7 +299,10 @@ const CreatePanel: FC<{
   startImages: string[]
   onRemoveStartImage: (index: number) => void
   onAddStartImage: (path: string) => void
-}> = ({ modalityFilter, onAddStartImage, onProviderCatalog, onRemoveStartImage, onReuseApplied, reuse, startImages }) => {
+  styleRefs: string[]
+  onAddStyleRef: (path: string) => void
+  onRemoveStyleRef: (index: number) => void
+}> = ({ modalityFilter, onAddStartImage, onAddStyleRef, onProviderCatalog, onRemoveStartImage, onRemoveStyleRef, onReuseApplied, reuse, startImages, styleRefs }) => {
   const k = useStudio()
   const { data } = useQuery({ queryFn: fetchProviders, queryKey: PROVIDERS_KEY, staleTime: 60_000 })
   const providers = useMemo(() => data?.providers ?? [], [data])
@@ -336,7 +339,9 @@ const CreatePanel: FC<{
   const [pickedStyles, setPickedStyles] = useState<Array<{ id: string; strength: number }>>([])
   // Drag-over highlight for the panel-wide start-image drop zone.
   const [dragOver, setDragOver] = useState(false)
+  const [styleDragOver, setStyleDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const styleFileInputRef = useRef<HTMLInputElement | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
 
   const patch = useCallback((update: Partial<typeof state>) => setState(prev => ({ ...prev, ...update })), [])
@@ -382,7 +387,7 @@ const CreatePanel: FC<{
       return
     }
 
-    const { startImages: _startImages, ...fields } = reuse
+    const { startImages: _startImages, styleRefs: _styleRefs, ...fields } = reuse
 
     patch(fields)
     setCountChoice('1')
@@ -529,6 +534,10 @@ const CreatePanel: FC<{
       params.image_url = startImages.length === 1 && maxImages <= 1 ? startImages[0] : startImages
     }
 
+    if (model.supports.style_references && styleRefs.length > 0) {
+      params.image_style_references = styleRefs
+    }
+
     if (model.modality === 'audio') {
       // Music brief: turn the structured fields into the craft loop's brief.
       // Instrumental mode drops vocal/lyrics — see musicBriefParams.
@@ -623,7 +632,8 @@ const CreatePanel: FC<{
         provider.key_on_file ? <ProviderKeyStatus provider={provider} /> : <ProviderKeyForm provider={provider} />
       )}
 
-      {/* Hidden OS file picker — the attach button's target. */}
+      {/* Hidden OS file pickers — the attach buttons' targets. The start-image
+          picker is single-shot; the style-refs picker takes many at once. */}
       <input
         accept={ACCEPT_ATTR}
         className="hidden"
@@ -635,6 +645,27 @@ const CreatePanel: FC<{
           event.target.value = ''
         }}
         ref={fileInputRef}
+        type="file"
+      />
+      <input
+        accept={ACCEPT_ATTR}
+        className="hidden"
+        multiple
+        onChange={event => {
+          const getPath = window.hermesDesktop?.getPathForFile
+
+          if (getPath) {
+            Array.from(event.target.files ?? []).forEach(file => {
+              const p = getPath(file)
+
+              if (p) {
+                onAddStyleRef(p)
+              }
+            })
+          }
+          event.target.value = ''
+        }}
+        ref={styleFileInputRef}
         type="file"
       />
 
@@ -655,6 +686,64 @@ const CreatePanel: FC<{
           ))}
           {maxImages > 1 && slotsLeft > 0 && (
             <span className="text-[0.625rem] text-(--ui-text-quaternary)">{k.moreImagesHint(slotsLeft)}</span>
+          )}
+        </div>
+      )}
+
+      {/* Style references (Krea 2): up to 10 images guiding the LOOK — distinct
+          from start images, which set content. Own drop zone so drags from the
+          library or Finder land where the user aimed them. */}
+      {model?.supports?.style_references && (
+        <div
+          className={cn(
+            'flex flex-col gap-1.5 rounded-md bg-(--ui-bg-tertiary) px-2 py-1.5',
+            styleDragOver && 'ring-2 ring-(--dt-primary)'
+          )}
+          onDragLeave={() => setStyleDragOver(false)}
+          onDragOver={event => {
+            event.preventDefault()
+            setStyleDragOver(true)
+          }}
+          onDrop={event => {
+            event.preventDefault()
+            setStyleDragOver(false)
+            const path = droppedPath(event.dataTransfer, window.hermesDesktop?.getPathForFile)
+
+            if (path) {
+              onAddStyleRef(path)
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+              {k.styleRefs}: {styleRefs.length}/10
+            </span>
+            {styleRefs.length < 10 && (
+              <Button
+                onClick={() => styleFileInputRef.current?.click()}
+                size="sm"
+                variant="ghost"
+              >
+                <Codicon name="add" />
+                {k.addStyleRef}
+              </Button>
+            )}
+          </div>
+          {styleRefs.map((img, index) => (
+            <div className="flex items-center gap-2" key={`${img}-${index}`}>
+              <Thumb alt={k.styleRefs} className="size-10 rounded object-cover" path={img} />
+              <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-(--ui-text-tertiary)">
+                {img.split('/').pop()}
+              </span>
+              <Tip label={k.clearStartImage}>
+                <Button onClick={() => onRemoveStyleRef(index)} size="icon-sm" variant="ghost">
+                  <Codicon name="close" />
+                </Button>
+              </Tip>
+            </div>
+          ))}
+          {styleRefs.length === 0 && (
+            <span className="text-[0.625rem] text-(--ui-text-quaternary)">{k.styleRefsHint}</span>
           )}
         </div>
       )}
@@ -964,7 +1053,8 @@ const Lightbox: FC<{
     negativePrompt: k.negativePrompt,
     resolution: k.resolution,
     seed: k.seed,
-    startImage: k.startImage
+    startImage: k.startImage,
+    styleRefs: k.styleRefs
   }
 
   const copyPrompt = () => {
@@ -1412,6 +1502,7 @@ export const MediaStudioPage: FC = () => {
   const [sortMode, setSortModeState] = useState<SortMode>(loadSortMode)
   const [lightbox, setLightbox] = useState<MediaJob | null>(null)
   const [startImages, setStartImages] = useState<string[]>([])
+  const [styleRefs, setStyleRefs] = useState<string[]>([])
   const [reuse, setReuse] = useState<ReuseState | null>(null)
   const [coverDraft, setCoverDraft] = useState<CoverDraft | null>(null)
   const [audioPanelJob, setAudioPanelJob] = useState<MediaJob | null>(null)
@@ -1555,6 +1646,15 @@ export const MediaStudioPage: FC = () => {
     setStartImages(prev => prev.filter((_, i) => i !== index))
   }, [])
 
+  // Style references (Krea 2): the same list-op pattern, capped at Krea's 10.
+  const onAddStyleRef = useCallback((path: string) => {
+    setStyleRefs(prev => (prev.includes(path) || prev.length >= 10 ? prev : [...prev, path]))
+  }, [])
+
+  const onRemoveStyleRef = useCallback((index: number) => {
+    setStyleRefs(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
   const onUseAsInput = useCallback((job: MediaJob) => {
     const path = job.result_paths[0]
 
@@ -1585,6 +1685,7 @@ export const MediaStudioPage: FC = () => {
 
     setFilter(job.modality)
     setStartImages(snapshot.startImages)
+    setStyleRefs(snapshot.styleRefs)
     setReuse(snapshot)
     setLightbox(null)
     scrollToTop()
@@ -1609,13 +1710,16 @@ export const MediaStudioPage: FC = () => {
       <CreatePanel
         modalityFilter={filter}
         onAddStartImage={onAddStartImage}
+        onAddStyleRef={onAddStyleRef}
         onProviderCatalog={providers => {
           providersRef.current = providers
         }}
         onRemoveStartImage={onRemoveStartImage}
+        onRemoveStyleRef={onRemoveStyleRef}
         onReuseApplied={() => setReuse(null)}
         reuse={reuse}
         startImages={startImages}
+        styleRefs={styleRefs}
       />
 
       {coverDraft && (
