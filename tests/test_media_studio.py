@@ -553,11 +553,11 @@ def test_fal_payload_styles_match_harvested_schemas(monkeypatch):
     assert p["start_image_url"] == tiny_png
     assert "prompt" not in p
 
-    # Gemini Omni Flash is i2v-only: text-to-video submits are refused with
-    # guidance, and aspect_ratio IS sent on i2v (schema requires it there).
+    # Gemini Omni Flash 1.1 is both t2v and i2v; aspect_ratio is sent on
+    # both paths (v1.1's schema takes it on i2v too).
     omni = adapter._model("gemini-omni-flash")
-    with _pytest.raises(providers_mod.MediaProviderError):
-        adapter._payload(omni, "video", {"prompt": "x"})
+    endpoint, p = adapter._payload(omni, "video", {"prompt": "x"})
+    assert endpoint == "google/gemini-omni-flash/v1.1/text-to-video"
     _, p = adapter._payload(omni, "video", {"prompt": "x", "image_url": tiny_png, "aspect_ratio": "16:9"})
     assert p["aspect_ratio"] == "16:9"
 
@@ -571,7 +571,19 @@ def test_fal_payload_styles_match_harvested_schemas(monkeypatch):
 def test_fal_catalog_covers_gateway_pricing_rules():
     """Every fal endpoint with an enabled gateway pricing rule (2026-08-12)
     is reachable through the catalog — as a model id or a routed endpoint —
-    except the two documented exclusions."""
+    except the documented exclusions (superseded versions and the retired
+    Krea-via-FAL duplicates: the Krea lane serves those models on one
+    billing path per the portal design plan)."""
+    # Endpoints priced on the gateway but deliberately not exposed:
+    INTENTIONALLY_UNCOVERED = {
+        # Superseded by v1.1 rows (gateway still prices both).
+        "alibaba/happy-horse/image-to-video",
+        "alibaba/happy-horse/text-to-video",
+        "google/gemini-omni-flash/image-to-video",
+        # Retired duplicates (design plan: single Krea billing path).
+        "fal-ai/krea/v2/large/text-to-image",
+        "fal-ai/krea/v2/medium/text-to-image",
+    }
     providers_mod = _load("providers")
     reachable = set()
     for m in providers_mod.FAL_IMAGE_MODELS:
@@ -610,7 +622,7 @@ def test_fal_catalog_covers_gateway_pricing_rules():
     }
     # Documented exclusions: billing alias + video upscaler (no upload UI yet).
     excluded = {"openai/gpt-image-2", "fal-ai/clarity-upscaler", "fal-ai/seedvr/upscale/video"}
-    missing = gateway_endpoints - reachable - excluded
+    missing = gateway_endpoints - reachable - excluded - INTENTIONALLY_UNCOVERED
     assert not missing, f"gateway endpoints not reachable from the catalog: {sorted(missing)}"
 
 
@@ -1017,3 +1029,59 @@ def test_gpt_image_25_rows_match_portal_catalog():
 
     # GPT Image 2 shares the same 4:3-variant constraint.
     assert set(adapter._model("fal-ai/gpt-image-2")["aspect_ratios"]) == {"1:1", "4:3", "3:4"}
+
+
+def test_parity_pass_new_video_families():
+    """The Sep-Oct 2026 portal additions: wan 3.0 (audio param key + i2v
+    aspect), kling v3 standard/pro + o3 (start_image_url), h3-max (static
+    payload), ltx-2.5 (duration capped by resolution), creativity on krea."""
+    providers_mod = _load("providers")
+    adapter = providers_mod.FalAdapter()
+
+    # Wan 3.0: i2v keeps aspect_ratio, audio rides the `audio` key.
+    wan = adapter._model("wan-3.0")
+    endpoint, payload = adapter._video_payload(wan, {
+        "prompt": "p", "aspect_ratio": "4:3", "duration": 10, "audio": True, "resolution": "720p",
+    })
+    assert endpoint == "alibaba/wan-3.0/text-to-video"
+    assert payload["audio"] is True and "generate_audio" not in payload
+    assert payload["duration"] == 10 and payload["aspect_ratio"] == "4:3"
+
+    # Kling v3 standard: i2v drops aspect (derives from start image).
+    kling = adapter._model("kling-v3")
+    from PIL import Image
+    import io as _io
+    import base64 as _b64
+    buf = _io.BytesIO()
+    Image.new("RGB", (8, 8), (1, 2, 3)).save(buf, "PNG")
+    data_uri = "data:image/png;base64," + _b64.b64encode(buf.getvalue()).decode()
+    endpoint, payload = adapter._video_payload(kling, {
+        "prompt": "p", "aspect_ratio": "16:9", "duration": 5, "image_url": data_uri,
+    })
+    assert endpoint == "fal-ai/kling-video/v3/standard/image-to-video"
+    assert "aspect_ratio" not in payload
+    assert payload["start_image_url"] == data_uri and payload["duration"] == "5"
+
+    # H3 Max: static payload always rides (t2v with a prompt — the studio
+    # rejects an empty prompt with no start image regardless of the model).
+    h3max = adapter._model("minimax-h3-max")
+    endpoint, payload = adapter._video_payload(h3max, {"prompt": "p", "duration": 8})
+    assert endpoint == "minimax/h3-max/text-to-video"
+    assert payload["prompt_expansion_mode"] == "balanced"
+    assert payload["duration"] == 8
+
+    # LTX 2.5: duration clamped by resolution at 1440p+.
+    ltx = adapter._model("ltx-2.5")
+    _, p1 = adapter._video_payload(ltx, {"prompt": "p", "resolution": "1080p", "duration": 20})
+    _, p2 = adapter._video_payload(ltx, {"prompt": "p", "resolution": "2160p", "duration": 20})
+    assert p1["duration"] == 20 and p2["duration"] == 10
+
+    # Krea creativity: valid enum rides; invalid fails loud.
+    krea = providers_mod.KreaAdapter()
+    krea._route = lambda m: ("https://gw", "t", "managed")
+    captured = {}
+    krea._request = lambda *a, **k: (captured.update({"body": a[2]}) or {"job_id": "j"})
+    krea.submit("krea/krea-2/medium", "image", {"prompt": "p", "creativity": "high"})
+    assert captured["body"]["creativity"] == "high"
+    with pytest.raises(providers_mod.MediaProviderError, match="raw/low/medium/high"):
+        krea.submit("krea/krea-2/medium", "image", {"prompt": "p", "creativity": "wild"})

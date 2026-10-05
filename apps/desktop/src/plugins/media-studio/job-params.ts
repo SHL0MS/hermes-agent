@@ -9,6 +9,7 @@ import type { MediaJob } from './api'
 export type ParamLabelKey =
   | 'aspectRatio'
   | 'audio'
+  | 'creativity'
   | 'duration'
   | 'musicBpm'
   | 'musicGenre'
@@ -53,6 +54,12 @@ export function jobParamEntries(job: MediaJob): ParamEntry[] {
 
   if (typeof resolution === 'string' && resolution) {
     out.push({ key: 'resolution', value: resolution })
+  }
+
+  const creativity = params.creativity
+
+  if (typeof creativity === 'string' && creativity) {
+    out.push({ key: 'creativity', value: creativity })
   }
 
   const duration = params.duration
@@ -207,6 +214,7 @@ export interface ReuseState {
   duration: string
   seed: string
   audio: boolean
+  creativity: string
   startImages: string[]
   styleRefs: string[]
   lyrics: string
@@ -246,6 +254,7 @@ export function reuseStateFromJob(job: MediaJob): ReuseState {
     duration: typeof p.duration === 'number' && Number.isFinite(p.duration) ? String(p.duration) : '',
     seed: asStr(p.seed),
     audio: p.audio !== false,
+    creativity: asStr(p.creativity),
     startImages: images,
     styleRefs,
     lyrics: asStr(p.lyrics),

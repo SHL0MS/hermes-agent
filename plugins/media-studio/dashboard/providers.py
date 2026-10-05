@@ -449,26 +449,6 @@ FAL_IMAGE_MODELS: List[Dict[str, Any]] = [
         "note": "Microsoft's image model.",
     },
     {
-        "id": "fal-ai/krea/v2/large/text-to-image",
-        "display": "Krea 2 Large (via fal)",
-        "modality": "image",
-        "tier": "quality",
-        "payload_style": "aspect",
-        "supports": {"aspect_ratio": True, "seed": True},
-        "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Krea's flagship, billed through portal credits here.",
-    },
-    {
-        "id": "fal-ai/krea/v2/medium/text-to-image",
-        "display": "Krea 2 Medium (via fal)",
-        "modality": "image",
-        "tier": "fast",
-        "payload_style": "aspect",
-        "supports": {"aspect_ratio": True, "seed": True},
-        "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
-        "note": "Krea 2 mid-size, portal credits.",
-    },
-    {
         "id": "fal-ai/clarity-upscaler",
         "display": "Clarity Upscaler",
         "modality": "image",
@@ -542,8 +522,8 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
         },
         "aspect_ratios": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
         "resolutions": ["480p", "720p"],
-        "durations": [4, 6, 8, 10],
-        "note": "Latest Seedance; excellent motion.",
+        "durations": [4, 6, 8, 10, 15, 20, 25, 30],
+        "note": "Latest Seedance; excellent motion. Native 30s single-pass.",
     },
     {
         "id": "seedance-2.0",
@@ -603,7 +583,7 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
             "image_url": True,
         },
         "aspect_ratios": ["16:9", "9:16", "1:1"],
-        "durations": [5, 8, 10],
+        "durations": [3, 5, 8, 10, 15],
         "note": "Kling's 4K tier; strong cinematography. Prompt optional with a start image.",
     },
     {
@@ -623,6 +603,137 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
         },
         "aspect_ratios": _PRESET_ASPECTS,
         "note": "Open-source 22B; fast with native audio.",
+    },
+    {
+        "id": "ltx-2.5",
+        "display": "LTX 2.5",
+        "modality": "video",
+        "tier": "fast",
+        "text_endpoint": "lightricks/ltx-2.5/text-to-video/fast",
+        "image_endpoint": "lightricks/ltx-2.5/image-to-video/fast",
+        "duration_format": "int",
+        "duration_cap_by_resolution": {"1440p": 10, "2160p": 10},
+        "supports": {
+            "aspect_ratio": True,
+            "resolution": True,
+            "duration": True,
+            "audio": True,
+            "image_url": True,
+        },
+        "aspect_ratios": ["16:9", "9:16"],
+        "resolutions": ["720p", "1080p", "1440p", "2160p"],
+        "durations": [6, 8, 10, 12, 14, 16, 18, 20],
+        "note": "Lightricks audio-video model; up to 20s (10s at 1440p and up).",
+    },
+    {
+        "id": "kling-v3",
+        "display": "Kling 3.0",
+        "modality": "video",
+        "tier": "quality",
+        "text_endpoint": "fal-ai/kling-video/v3/standard/text-to-video",
+        "image_endpoint": "fal-ai/kling-video/v3/standard/image-to-video",
+        "duration_format": "str",
+        "image_param": "start_image_url",
+        "requires": {"prompt": False},
+        "supports": {
+            "aspect_ratio": True,
+            "duration": True,
+            "audio": True,
+            "negative_prompt": True,
+            "image_url": True,
+        },
+        "aspect_ratios": ["16:9", "9:16", "1:1"],
+        "durations": [3, 5, 8, 10, 15],
+        "note": "Kling 3.0 core tier; cinematic motion, native audio. Prompt optional with a start image.",
+    },
+    {
+        "id": "kling-v3-pro",
+        "display": "Kling 3.0 Pro",
+        "modality": "video",
+        "tier": "quality",
+        "text_endpoint": "fal-ai/kling-video/v3/pro/text-to-video",
+        "image_endpoint": "fal-ai/kling-video/v3/pro/image-to-video",
+        "duration_format": "str",
+        "image_param": "start_image_url",
+        "requires": {"prompt": False},
+        "supports": {
+            "aspect_ratio": True,
+            "duration": True,
+            "audio": True,
+            "negative_prompt": True,
+            "image_url": True,
+        },
+        "aspect_ratios": ["16:9", "9:16", "1:1"],
+        "durations": [3, 5, 8, 10, 15],
+        "note": "Kling 3.0 top quality tier. Prompt optional with a start image.",
+    },
+    {
+        "id": "kling-o3",
+        "display": "Kling O3",
+        "modality": "video",
+        "tier": "quality",
+        "text_endpoint": "fal-ai/kling-video/o3/standard/text-to-video",
+        "image_endpoint": "fal-ai/kling-video/o3/standard/image-to-video",
+        "duration_format": "str",
+        "image_param": "start_image_url",
+        "requires": {"prompt": False},
+        "supports": {
+            "aspect_ratio": True,
+            "duration": True,
+            "audio": True,
+            "image_url": True,
+        },
+        "aspect_ratios": ["16:9", "9:16", "1:1"],
+        "durations": [3, 5, 8, 10, 15],
+        "note": "Kuaishou frontier; multi-shot native storytelling, optional audio.",
+    },
+    {
+        "id": "wan-3.0",
+        "display": "Wan 3.0",
+        "modality": "video",
+        "tier": "quality",
+        "text_endpoint": "alibaba/wan-3.0/text-to-video",
+        "image_endpoint": "alibaba/wan-3.0/image-to-video",
+        "duration_format": "int",
+        "image_param": "start_image_url",
+        "audio_param": "audio",
+        "requires": {"prompt": False},
+        "supports": {
+            "aspect_ratio": True,
+            "resolution": True,
+            "duration": True,
+            "audio": True,
+            "seed": True,
+            "image_url": True,
+        },
+        "aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16"],
+        "resolutions": ["480p", "720p", "1080p"],
+        "durations": [5, 8, 10, 15, 20, 30],
+        "note": "Alibaba latest gen; 2-30s clips, native audio, lip-sync. Prompt optional with a start image.",
+    },
+    {
+        "id": "wan-3.0-prime",
+        "display": "Wan 3.0 Prime",
+        "modality": "video",
+        "tier": "quality",
+        "text_endpoint": "alibaba/wan-3.0-prime/text-to-video",
+        "image_endpoint": "alibaba/wan-3.0-prime/image-to-video",
+        "duration_format": "int",
+        "image_param": "start_image_url",
+        "audio_param": "audio",
+        "requires": {"prompt": False},
+        "supports": {
+            "aspect_ratio": True,
+            "resolution": True,
+            "duration": True,
+            "audio": True,
+            "seed": True,
+            "image_url": True,
+        },
+        "aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16"],
+        "resolutions": ["480p", "720p", "1080p"],
+        "durations": [5, 8, 10, 15, 20, 30],
+        "note": "Alibaba premium tier; faster iteration, higher fidelity, 2-30s.",
     },
     {
         "id": "pixverse-v6",
@@ -649,11 +760,11 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
     },
     {
         "id": "happy-horse",
-        "display": "Happy Horse",
+        "display": "Happy Horse 1.1",
         "modality": "video",
         "tier": "quality",
-        "text_endpoint": "alibaba/happy-horse/text-to-video",
-        "image_endpoint": "alibaba/happy-horse/image-to-video",
+        "text_endpoint": "alibaba/happy-horse/v1.1/text-to-video",
+        "image_endpoint": "alibaba/happy-horse/v1.1/image-to-video",
         "duration_format": "int",
         "requires": {"prompt": False},
         "supports": {
@@ -663,25 +774,26 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
             "seed": True,
             "image_url": True,
         },
-        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21", "5:4", "4:5"],
         "resolutions": ["720p", "1080p"],
-        "durations": [5, 8, 10, 14],
-        "note": "Alibaba's latest (Wan family); up to 14s. Prompt optional with a start image.",
+        "durations": [5, 8, 10, 15],
+        "note": "Alibaba flagship (Wan family); 1080p, multilingual lip-sync, 3-15s. Prompt optional with a start image.",
     },
     {
         "id": "gemini-omni-flash",
-        "display": "Gemini Omni Flash",
+        "display": "Gemini Omni Flash 1.1",
         "modality": "video",
         "tier": "fast",
-        "text_endpoint": None,
-        "image_endpoint": "google/gemini-omni-flash/image-to-video",
+        "text_endpoint": "google/gemini-omni-flash/v1.1/text-to-video",
+        "image_endpoint": "google/gemini-omni-flash/v1.1/image-to-video",
         "duration_format": "int",
         "i2v_aspect": True,
-        "requires": {"image_url": True},
-        "supports": {"aspect_ratio": True, "duration": True, "image_url": True},
+        "requires": {"prompt": False},
+        "supports": {"aspect_ratio": True, "resolution": True, "duration": True, "image_url": True},
         "aspect_ratios": ["16:9", "9:16"],
-        "durations": [8],
-        "note": "Image-to-video only — animate a start image.",
+        "resolutions": ["360p", "720p", "1080p", "4k"],
+        "durations": [5, 8, 10],
+        "note": "Text and image to video, physics-grounded motion, up to 4K, 3-10s.",
     },
     {
         "id": "minimax-h3",
@@ -690,10 +802,44 @@ FAL_VIDEO_MODELS: List[Dict[str, Any]] = [
         "tier": "quality",
         "text_endpoint": "minimax/h3/text-to-video",
         "image_endpoint": "minimax/h3/image-to-video",
-        "supports": {"aspect_ratio": True, "resolution": True, "image_url": True},
+        "duration_format": "int",
+        "supports": {"aspect_ratio": True, "resolution": True, "duration": True, "image_url": True},
         "aspect_ratios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
         "resolutions": ["768P", "2K", "4K"],
-        "note": "Hailuo successor; up to 4K.",
+        "durations": [5, 8, 10, 15],
+        "note": "Hailuo successor; native 2K (up to 4K), 5-15s.",
+    },
+    {
+        "id": "minimax-h3-max",
+        "display": "MiniMax H3 Max",
+        "modality": "video",
+        "tier": "quality",
+        "text_endpoint": "minimax/h3-max/text-to-video",
+        "image_endpoint": "minimax/h3-max/image-to-video",
+        "duration_format": "int",
+        "static_payload": {"prompt_expansion_mode": "balanced"},
+        "requires": {"prompt": False},
+        "supports": {"aspect_ratio": True, "resolution": True, "duration": True, "seed": True, "image_url": True},
+        "aspect_ratios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+        "resolutions": ["480P", "768P"],
+        "durations": [5, 8, 10, 15],
+        "note": "fal's post-trained H3; top-ranked quality, 768p in seconds. Prompt optional with a start image.",
+    },
+    {
+        "id": "minimax-h3-max-turbo",
+        "display": "MiniMax H3 Max Turbo",
+        "modality": "video",
+        "tier": "fast",
+        "text_endpoint": "minimax/h3-max-turbo/text-to-video",
+        "image_endpoint": "minimax/h3-max-turbo/image-to-video",
+        "duration_format": "int",
+        "static_payload": {"prompt_expansion_mode": "balanced"},
+        "requires": {"prompt": False},
+        "supports": {"aspect_ratio": True, "resolution": True, "duration": True, "seed": True, "image_url": True},
+        "aspect_ratios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+        "resolutions": ["480P", "768P", "1080P"],
+        "durations": [5, 8, 10, 15],
+        "note": "fal's throughput-tuned H3 Max; near-Max quality at a fraction of the price/latency.",
     },
     {
         "id": "grok-imagine-v1.5",
@@ -895,7 +1041,7 @@ class FalAdapter:
         if not endpoint:
             raise MediaProviderError(f"{model['display']} needs a start image — pick one from the library")
 
-        payload: Dict[str, Any] = {}
+        payload: Dict[str, Any] = dict(model.get("static_payload") or {})
         if prompt:
             payload["prompt"] = prompt
         if image_url:
@@ -923,6 +1069,11 @@ class FalAdapter:
 
         if supports.get("duration") and params.get("duration"):
             value = int(params["duration"])
+            # Some endpoints cap duration by resolution (LTX 2.5: 10s at
+            # 1440p and up) — clamp before formatting.
+            cap = (model.get("duration_cap_by_resolution") or {}).get(resolution)
+            if cap:
+                value = min(value, int(cap))
             fmt = model.get("duration_format", "int")
             payload["duration"] = (
                 f"{value}s" if fmt == "suffix" else str(value) if fmt == "str" else value
@@ -1066,7 +1217,7 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "fast",
         "path": "/generate/image/krea/krea-2/medium-turbo",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True, "style_references": True},
+        "supports": {"aspect_ratio": True, "seed": True, "creativity": True, "style_references": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
         "note": "Fastest Krea 2. Portal credits for subscribers. Style refs (up to 10).",
     },
@@ -1077,7 +1228,7 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "fast",
         "path": "/generate/image/krea/krea-2/medium",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True, "style_references": True},
+        "supports": {"aspect_ratio": True, "seed": True, "creativity": True, "style_references": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
         "note": "Krea 2 mid-size. Portal credits for subscribers. Style refs (up to 10).",
     },
@@ -1088,7 +1239,7 @@ KREA_MODELS: List[Dict[str, Any]] = [
         "tier": "quality",
         "path": "/generate/image/krea/krea-2/large",
         "managed": True,
-        "supports": {"aspect_ratio": True, "seed": True, "style_references": True},
+        "supports": {"aspect_ratio": True, "seed": True, "creativity": True, "style_references": True},
         "aspect_ratios": ["1:1", "4:3", "3:2", "16:9", "2.35:1", "4:5", "2:3", "9:16"],
         "note": "Krea's flagship for expressive photorealism. Portal credits. Style refs (up to 10).",
     },
@@ -1278,6 +1429,16 @@ class KreaAdapter:
                 body["start_image"] = start_image
         if supports.get("seed") and params.get("seed") is not None:
             body["seed"] = int(params["seed"])
+
+        # Creativity (live on the managed gateway): prompt-expansion mode.
+        # Absent = the endpoint's default; the gateway validates the enum.
+        creativity = str(params.get("creativity") or "").strip()
+        if supports.get("creativity") and creativity:
+            if creativity not in ("raw", "low", "medium", "high"):
+                raise MediaProviderError(
+                    f"Krea creativity must be one of raw/low/medium/high; got {creativity!r}"
+                )
+            body["creativity"] = creativity
 
         # Style references (live on the managed gateway): up to 10 images that
         # guide the look. Local library files ride as small data URIs (Krea's

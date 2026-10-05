@@ -28,6 +28,7 @@ type StudioMessages = {
   audio: string
   startImage: string
   clearStartImage: string
+  creativity: string
   styleRefs: string
   addStyleRef: string
   styleRefsHint: string
@@ -183,6 +184,7 @@ const en: StudioMessages = {
   audio: 'Audio',
   startImage: 'Start image',
   clearStartImage: 'Clear start image',
+  creativity: 'Creativity',
   styleRefs: 'Style references',
   addStyleRef: 'Add',
   styleRefsHint: 'Drop or add up to 10 images that guide the look (style, palette, texture)',
@@ -336,6 +338,7 @@ const ja: StudioMessages = {
   audio: '音声',
   startImage: '開始画像',
   clearStartImage: '開始画像をクリア',
+  creativity: '創造性',
   styleRefs: 'スタイル参照',
   addStyleRef: '追加',
   styleRefsHint: '見た目（スタイル・配色・質感）を導く画像を最大10枚ドロップまたは追加',
@@ -489,6 +492,7 @@ const zh: StudioMessages = {
   audio: '音频',
   startImage: '起始图像',
   clearStartImage: '清除起始图像',
+  creativity: '创造力',
   styleRefs: '风格参考',
   addStyleRef: '添加',
   styleRefsHint: '拖入或添加最多10张引导风格（样式、配色、质感）的图像',
@@ -642,6 +646,7 @@ const zhHant: StudioMessages = {
   audio: '音訊',
   startImage: '起始影像',
   clearStartImage: '清除起始影像',
+  creativity: '創造力',
   styleRefs: '風格參考',
   addStyleRef: '新增',
   styleRefsHint: '拖入或新增最多10張引導風格（樣式、配色、質感）的影像',

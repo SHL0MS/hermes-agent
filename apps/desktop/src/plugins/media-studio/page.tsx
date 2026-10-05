@@ -199,7 +199,8 @@ interface CreateState {
   duration: string
   seed: string
   audio: boolean
-  startImage: string
+  creativity: string
+  startImages: string[]
   /** MiniMax music brief fields (audio modality only). */
   lyrics: string
   genre: string
@@ -318,7 +319,7 @@ const CreatePanel: FC<{
     [modalityFilter, providers]
   )
 
-  const [state, setState] = useState<Omit<CreateState, 'startImage'>>({
+  const [state, setState] = useState<Omit<CreateState, 'startImages'>>({
     provider: '',
     modelId: '',
     prompt: '',
@@ -327,8 +328,9 @@ const CreatePanel: FC<{
     resolution: '',
     duration: '',
     seed: '',
-    audio: true
-    , lyrics: '', genre: '', mood: '', bpm: '', musicKey: '', vocal: '', instrumentation: '',
+    audio: true,
+    creativity: '',
+    lyrics: '', genre: '', mood: '', bpm: '', musicKey: '', vocal: '', instrumentation: '',
     instrumental: false, iterations: '2'
   })
 
@@ -510,6 +512,10 @@ const CreatePanel: FC<{
 
     if (supports.resolution && state.resolution) {
       params.resolution = state.resolution
+    }
+
+    if (supports.creativity && state.creativity) {
+      params.creativity = state.creativity
     }
 
     if (supports.duration && state.duration) {
@@ -910,9 +916,19 @@ const CreatePanel: FC<{
           <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
             {k.resolution}
             <SegmentedControl
-              onChange={id => patch({ resolution: id })}
+              onChange={(id: string) => patch({ resolution: id })}
               options={(model?.resolutions ?? []).map(r => ({ id: r, label: r }))}
               value={state.resolution}
+            />
+          </label>
+        )}
+        {supports.creativity && (
+          <label className="flex flex-col gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+            {k.creativity}
+            <SegmentedControl
+              onChange={(id: string) => patch({ creativity: id === 'auto' ? '' : id })}
+              options={['auto', 'raw', 'low', 'medium', 'high'].map(c => ({ id: c, label: c }))}
+              value={state.creativity || 'auto'}
             />
           </label>
         )}
@@ -1042,6 +1058,7 @@ const Lightbox: FC<{
   const paramLabel: Record<(typeof entries)[number]['key'], string> = {
     aspectRatio: k.aspectRatio,
     audio: k.audio,
+    creativity: k.creativity,
     duration: k.duration,
     musicBpm: k.musicBpm,
     musicGenre: k.musicGenre,
