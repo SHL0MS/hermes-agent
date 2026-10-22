@@ -6,6 +6,7 @@ from pathlib import Path
 
 from gateway.config import Platform
 from gateway.session import SessionEntry, SessionSource
+from gateway.session_lifecycle import _now
 from gateway.session_contract import SessionRef
 from hermes_state_keys import local_identity
 from hermes_state_local import POLICY_PREFIX, local_receipt
@@ -180,6 +181,11 @@ def restore_local_session(authority, sid):
             if current is not None:
                 entry.yolo = current.yolo
             entry.origin = source
+            # A restore is routing activity: the receipt's frozen ``updated_at`` is the
+            # creation stamp, and a session idle by that stamp has its route pruned
+            # (``prune_old_entries``) while this authority holds it live — after which
+            # every resume refuses (``admission_conflict``) until a restart.
+            entry.updated_at = _now()
             store._entries[route] = entry
         adapter.policies[chat_id] = policy
         authority.sessions[sid] = LiveSession(source, route)
@@ -191,8 +197,16 @@ def restore_local_session(authority, sid):
     else:
         with store._lock:
             current = store._entry_locked(route)
-            if current is None or (current.session_id not in receipt.get('lineage', [sid])
-                                   and not _stray_route_target(authority, receipt, current.session_id)):
+            if current is None:
+                # The prune dropped a live-attached route (its ``updated_at`` was the
+                # receipt's frozen creation stamp, past the retention cutoff): the
+                # receipt is the route's truth, so restore rebuilds it rather than
+                # refusing every resume with ``admission_conflict`` until a restart.
+                current = entry
+                entry.updated_at = _now()
+                store._entries[route] = entry
+            elif (current.session_id not in receipt.get('lineage', [sid])
+                  and not _stray_route_target(authority, receipt, current.session_id)):
                 raise RuntimeStoreError('admission_conflict')
             current.session_id = target
     return SessionRef(authority.profile_id, sid)

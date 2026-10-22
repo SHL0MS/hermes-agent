@@ -178,3 +178,73 @@ async def test_delete_retires_owner_receipts_and_never_resurrects_the_id(tmp_pat
         bind_api_session(authority, 'api-owner')
     assert authority.db.get_session(local.session_id) is None
     assert authority.db.get_session('api-owner') is None
+
+
+@pytest.mark.asyncio
+async def test_pruned_live_local_route_restores_instead_of_refusing(tmp_path, monkeypatch):
+    """A route pruned under a live session rebuilds from its receipt on every restore.
+
+    The receipt freezes the entry's ``updated_at`` at its creation stamp, so a
+    conversation older than ``session_store_max_age_days`` has its route pruned by
+    housekeeping while the authority still holds the session live. The restore then
+    found no route entry and refused with ``admission_conflict`` until a restart.
+    """
+    from datetime import datetime, timedelta
+
+    from gateway.config import GatewayConfig
+    from gateway.session import SessionStore
+    from gateway.session_authority import initialize_session_authority
+    from gateway.session_contract import Principal
+    from gateway.session_local import create_local_session
+    from gateway.session_local_recovery import restore_local_session
+    from hermes_state_local import POLICY_PREFIX
+    from gateway import run
+
+    config = {'platform_toolsets': {'cli': []}}
+    monkeypatch.setattr(run, '_load_gateway_config', lambda: config)
+
+    def runner():
+        store = SessionStore(tmp_path / 'sessions', GatewayConfig())
+        return SimpleNamespace(session_store=store, _session_db=store._db,
+                               adapters={}, _draining=False)
+
+    authority = await initialize_session_authority(runner(), profile_id='fixture', instance_id='first')
+    actor = Principal('owner', 'fixture', frozenset({'session:create', 'session:read'}), 'socket')
+    params = {'request_id': 'pruned', 'source': 'gui', 'cwd': str(tmp_path), 'model': 'frozen', 'toolsets': []}
+    ref = create_local_session(authority, actor, params)
+
+    store = authority.runner.session_store
+    route = authority.sessions[ref.session_id].route
+    stale = datetime.now() - timedelta(days=91)
+    with authority.db._read_ctx() as conn:
+        receipt = json.loads(conn.execute('SELECT value FROM state_meta WHERE key=?',
+                                         (POLICY_PREFIX + ref.session_id,)).fetchone()[0])
+    receipt['entry']['updated_at'] = stale.isoformat()
+    authority.db._write_sql('UPDATE state_meta SET value=? WHERE key=?',
+                            (json.dumps(receipt), POLICY_PREFIX + ref.session_id))
+    with store._lock:
+        store._entries[route].updated_at = stale
+
+    # Housekeeping prunes the idle route while the authority holds the session live.
+    assert store.prune_old_entries(90) == 1
+    with store._lock:
+        assert store._entry_locked(route) is None
+
+    # A warm restore rebuilds the receipt's route instead of refusing it.
+    assert restore_local_session(authority, ref.session_id).session_id == ref.session_id
+    with store._lock:
+        restored = store._entry_locked(route)
+    cutoff = datetime.now() - timedelta(days=90)
+    assert restored is not None and restored.session_id == ref.session_id
+    assert restored.updated_at > cutoff
+    assert store.prune_old_entries(90) == 0
+
+    # A cold authority (a restart) mounts the same stale receipt and keeps the route.
+    cold = await initialize_session_authority(runner(), profile_id='fixture', instance_id='second')
+    assert restore_local_session(cold, ref.session_id).session_id == ref.session_id
+    cold_store = cold.runner.session_store
+    with cold_store._lock:
+        cold_entry = cold_store._entry_locked(route)
+    assert cold_entry is not None and cold_entry.session_id == ref.session_id
+    assert cold_entry.updated_at > cutoff
+    assert cold_store.prune_old_entries(90) == 0
